@@ -54,10 +54,26 @@ Los colores están definidos en `tailwind.config.js`:
 
 ## 🔐 Roles del Sistema
 
-1. **👑 Director**: Acceso total al sistema
-2. **🧑‍💼 Coordinador**: Gestión académica (crear usuarios, cursos, asignaciones)
-3. **👨‍🏫 Profesor**: Gestión de notas y calificaciones
-4. **👨‍🎓 Estudiante**: Visualización de notas y materias
+1. **👑 Director**: Rol de consulta. Ve resumen general, métricas e información académica, sin edición.
+2. **🧑‍💼 Coordinador**: Crea profesores, crea cursos, crea estudiantes dentro de un curso, asigna profesores a cursos y consulta todas las notas con detalle.
+3. **👨‍🏫 Profesor**: Registra notas únicamente en los cursos que le fueron asignados.
+4. **👨‍🎓 Estudiante**: Visualiza únicamente sus propias notas.
+
+## 🏫 Modelo del Dominio Escolar
+
+- `Course`: Curso académico
+- `StudentCourseEnrollment`: Relación estudiante-curso
+- `TeacherCourseAssignment`: Relación profesor-curso
+- `GradeRecord`: Nota registrada para un estudiante en un curso por un profesor
+
+### Reglas funcionales clave
+
+- El proyecto es un sistema de gestión para una escuela.
+- Los estudiantes se crean dentro de un curso.
+- Un profesor no puede calificar cursos ajenos.
+- El coordinador puede ver las notas de todos los estudiantes.
+- El director tiene vista general y de supervisión.
+- El estudiante solo consulta sus propias notas.
 
 ## 🚀 Tipos Principales
 
