@@ -1,29 +1,48 @@
 import MainLayout from '../../layouts/MainLayout';
 import { useAuth } from '../../hooks/useAuth';
+import { CAPABILITY_LABELS, ROLE_CAPABILITIES, ROLE_DESCRIPTIONS } from '../../utils/constants';
 
 export default function DirectorDashboard() {
   const { user } = useAuth();
 
   return (
     <MainLayout>
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-6">
-        <div className="w-20 h-20 bg-purple-100 rounded-3xl flex items-center justify-center text-4xl shadow-inner">
-          👑
+      <div className="space-y-6">
+        <div className="bg-white rounded-3xl border border-purple-100 p-8 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="w-16 h-16 bg-purple-100 rounded-3xl flex items-center justify-center text-3xl shadow-inner">
+              👑
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-text-primary">Panel del Director</h1>
+              <p className="text-text-secondary mt-2 text-lg">
+                Bienvenido,{' '}
+                <span className="font-semibold text-text-primary">
+                  {user?.profile?.name} {user?.profile?.last_name}
+                </span>
+              </p>
+              <p className="text-text-secondary mt-2">
+                {ROLE_DESCRIPTIONS.director}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-text-primary">Pantalla del Director</h1>
-          <p className="text-text-secondary mt-2 text-lg">
-            Bienvenido,{' '}
-            <span className="font-semibold text-text-primary">
-              {user?.profile?.name} {user?.profile?.last_name}
-            </span>
-          </p>
-          <p className="text-text-secondary mt-1 text-sm">
-            Desde aquí tendrás acceso total al sistema académico.
-          </p>
+
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-text-primary">Funciones definidas para este rol</h2>
+          <div className="mt-4 grid gap-3">
+            {ROLE_CAPABILITIES.director.map((capability) => (
+              <div key={capability} className="rounded-2xl border border-purple-100 bg-purple-50 px-4 py-3 text-purple-900">
+                {CAPABILITY_LABELS[capability]}
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="bg-purple-50 border border-purple-200 rounded-2xl px-8 py-4 text-center">
-          <p className="text-purple-700 font-medium text-sm">🚧 Módulos del director en construcción</p>
+
+        <div className="bg-purple-50 border border-purple-200 rounded-2xl px-6 py-4">
+          <p className="text-purple-800 font-medium">
+            En esta etapa el director tendra un rol de consulta: ver resumen general, metricas y estado academico, sin flujos de edicion.
+          </p>
         </div>
       </div>
     </MainLayout>
