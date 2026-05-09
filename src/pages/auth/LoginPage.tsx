@@ -1,4 +1,4 @@
-ï»¿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_ROUTES } from '../../utils/constants';
@@ -15,7 +15,6 @@ export default function LoginPage() {
   useEffect(() => {
     if (!loading && user?.role) {
       const target = ROLE_ROUTES[user.role];
-      console.log('[auth] redirecting by role', user.role, target);
       navigate(target, { replace: true });
     }
   }, [loading, navigate, user]);
@@ -40,14 +39,11 @@ export default function LoginPage() {
 
     setSubmitting(true);
     try {
-      console.log('[auth] sending login request', { email: normalizedEmail });
       const { error: signInError } = await signIn(normalizedEmail, password);
       if (signInError) {
-        console.error('[auth] signIn error', signInError);
         setError(signInError.message || 'Credenciales incorrectas.');
       }
-    } catch (err) {
-      console.error('[auth] unexpected signIn error', err);
+    } catch {
       setError('No se pudo iniciar sesion. Intenta nuevamente.');
     } finally {
       setSubmitting(false);
@@ -56,59 +52,48 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-surface flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      <div className="flex min-h-screen items-center justify-center bg-slate-100">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-surface flex items-center justify-center p-6">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-100 p-8">
-        <h1 className="text-2xl font-bold text-text-primary">Iniciar sesion</h1>
-        <p className="text-text-secondary text-sm mt-1">Ingresa tus credenciales para continuar.</p>
+    <div className="grid min-h-screen bg-slate-100 lg:grid-cols-[1.1fr_0.9fr]">
+      <section className="hidden bg-gradient-to-br from-slate-900 via-blue-900 to-cyan-700 p-10 text-white lg:flex lg:flex-col lg:justify-between">
+        <div>
+          <p className="text-sm uppercase tracking-[0.25em] text-blue-200">SchoolHub</p>
+          <h1 className="mt-5 max-w-md text-4xl font-semibold leading-tight">Gestion escolar moderna para equipos academicos.</h1>
+          <p className="mt-4 max-w-md text-sm text-blue-100/90">Centraliza cursos, materias, profesores y estudiantes con un flujo administrativo profesional.</p>
+        </div>
+        <p className="text-xs text-blue-100/80">Plataforma administrativa · Seguridad Supabase · Dashboard responsive</p>
+      </section>
 
-        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
-          <div>
-            <label htmlFor="email" className="text-sm font-medium text-text-primary">Correo</label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full px-4 py-3 rounded-xl border border-slate-200 text-text-primary"
-              placeholder="usuario@escuela.com"
-              required
-            />
-          </div>
+      <section className="flex items-center justify-center p-6">
+        <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-xl">
+          <h2 className="text-2xl font-semibold tracking-tight text-text-primary">Iniciar sesion</h2>
+          <p className="mt-1 text-sm text-text-secondary">Ingresa con tu cuenta institucional.</p>
 
-          <div>
-            <label htmlFor="password" className="text-sm font-medium text-text-primary">Contrasena</label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full px-4 py-3 rounded-xl border border-slate-200 text-text-primary"
-              placeholder="********"
-              required
-            />
-          </div>
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            <div>
+              <label htmlFor="email" className="text-sm font-medium text-text-primary">Correo</label>
+              <input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-text-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30" placeholder="usuario@escuela.com" required />
+            </div>
 
-          {error && <p className="text-sm text-error">{error}</p>}
-          {!error && authError && <p className="text-sm text-amber-700">{authError}</p>}
+            <div>
+              <label htmlFor="password" className="text-sm font-medium text-text-primary">Contrasena</label>
+              <input id="password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="mt-1 w-full rounded-xl border border-slate-300 px-4 py-3 text-text-primary focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/30" placeholder="********" required />
+            </div>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full bg-primary hover:bg-primary-dark text-white font-semibold py-3 rounded-xl disabled:opacity-60"
-          >
-            {submitting ? 'Ingresando...' : 'Iniciar sesion'}
-          </button>
-        </form>
-      </div>
+            {error && <p className="text-sm text-error">{error}</p>}
+            {!error && authError && <p className="text-sm text-amber-700">{authError}</p>}
+
+            <button type="submit" disabled={submitting} className="w-full rounded-xl bg-primary py-3 font-semibold text-white transition-colors hover:bg-primary-dark disabled:opacity-60">
+              {submitting ? 'Ingresando...' : 'Iniciar sesion'}
+            </button>
+          </form>
+        </div>
+      </section>
     </div>
   );
 }

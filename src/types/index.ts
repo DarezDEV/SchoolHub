@@ -79,3 +79,50 @@ export interface GradeRecord {
   notes?: string;
   created_at: string;
 }
+
+export interface Curso {
+  id: string;
+  nombre: string;
+  nivel: string;
+  created_at: string;
+}
+
+export interface Materia {
+  id: string;
+  nombre: string;
+  created_at: string;
+}
+
+export interface Estudiante {
+  id: string;
+  nombre: string;
+  email: string;
+  curso_id: string;
+  created_at: string;
+}
+
+export interface EstudianteListItem extends Estudiante {
+  cursos: Pick<Curso, 'id' | 'nombre' | 'nivel'>;
+}
+
+export interface Profesor {
+  id: string;
+  nombre: string;
+  email: string;
+  created_at: string;
+}
+
+export interface ProfesorMateriaCurso {
+  id: string;
+  profesor_id: string;
+  materia_id: string;
+  curso_id: string;
+}
+
+export interface ProfesorListItem extends Profesor {
+  profesor_materia_curso: {
+    id: string;
+    materias: Pick<Materia, 'id' | 'nombre'>;
+    cursos: Pick<Curso, 'id' | 'nombre' | 'nivel'>;
+  }[];
+}

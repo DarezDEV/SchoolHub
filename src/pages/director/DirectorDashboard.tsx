@@ -1,49 +1,58 @@
+import { useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import MainLayout from '../../layouts/MainLayout';
-import { useAuth } from '../../hooks/useAuth';
-import { CAPABILITY_LABELS, ROLE_CAPABILITIES, ROLE_DESCRIPTIONS } from '../../utils/constants';
+import { DashboardCard, EmptyState, PageHeader } from '../../components/ui';
+
+type SectionKey = 'dashboard' | 'estudiantes' | 'profesores' | 'cursos' | 'materias' | 'usuarios' | 'reportes' | 'configuracion';
 
 export default function DirectorDashboard() {
-  const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const section = (searchParams.get('section') as SectionKey) || 'dashboard';
+
+  const metrics = useMemo(() => [
+    { label: 'Asistencia promedio', value: '93%' },
+    { label: 'Rendimiento academico', value: '88%' },
+    { label: 'Cursos activos', value: 24 },
+    { label: 'Docentes activos', value: 57 },
+  ], []);
 
   return (
     <MainLayout>
-      <div className="space-y-6">
-        <div className="bg-white rounded-3xl border border-purple-100 p-8 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="w-16 h-16 bg-purple-100 rounded-3xl flex items-center justify-center text-3xl shadow-inner">
-              ðŸ‘‘
-            </div>
-            <div>
-              <h1 className="text-3xl font-bold text-text-primary">Panel del Director</h1>
-              <p className="text-text-secondary mt-2 text-lg">
-                Bienvenido,{' '}
-                <span className="font-semibold text-text-primary">
-                  {user?.profile?.name} {user?.profile?.last_name}
-                </span>
-              </p>
-              <p className="text-text-secondary mt-2">
-                {ROLE_DESCRIPTIONS.director}
-              </p>
-            </div>
-          </div>
-        </div>
+      <div className="space-y-5">
+        <PageHeader title="Panel del Director" description="Vista ejecutiva con indicadores, estado institucional y reportes." />
 
-        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-text-primary">Funciones definidas para este rol</h2>
-          <div className="mt-4 grid gap-3">
-            {ROLE_CAPABILITIES.director.map((capability) => (
-              <div key={capability} className="rounded-2xl border border-purple-100 bg-purple-50 px-4 py-3 text-purple-900">
-                {CAPABILITY_LABELS[capability]}
+        {section === 'dashboard' && (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {metrics.map((metric) => (
+                <DashboardCard key={metric.label} label={metric.label} value={metric.value} />
+              ))}
+            </div>
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+                <h3 className="font-semibold text-text-primary">Resumen semanal</h3>
+                <p className="mt-2 text-sm text-text-secondary">
+                  La institucion mantiene estabilidad operativa. No se detectan alertas criticas en gestion academica.
+                </p>
               </div>
-            ))}
-          </div>
-        </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="font-semibold text-text-primary">Acciones sugeridas</h3>
+                <ul className="mt-3 space-y-2 text-sm text-text-secondary">
+                  <li>Revisar reporte de asistencia por curso.</li>
+                  <li>Validar asignaciones docentes del proximo periodo.</li>
+                  <li>Auditar estado de materias troncales.</li>
+                </ul>
+              </div>
+            </div>
+          </>
+        )}
 
-        <div className="bg-purple-50 border border-purple-200 rounded-2xl px-6 py-4">
-          <p className="text-purple-800 font-medium">
-            En esta etapa el director tendra un rol de consulta: ver resumen general, metricas y estado academico, sin flujos de edicion.
-          </p>
-        </div>
+        {section !== 'dashboard' && (
+          <EmptyState
+            title="Vista de consulta"
+            description="Como director, este modulo esta disponible en modo analitico. Puedes usar estas secciones para seguimiento y supervisión sin edición directa."
+          />
+        )}
       </div>
     </MainLayout>
   );
