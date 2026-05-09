@@ -36,6 +36,7 @@ export default function CoordinatorDashboard() {
   const [subjectModal, setSubjectModal] = useState(false);
   const [studentModal, setStudentModal] = useState(false);
   const [teacherModal, setTeacherModal] = useState(false);
+  const [courseAssignmentModal, setCourseAssignmentModal] = useState(false);
 
   const [courseSearch, setCourseSearch] = useState('');
   const [subjectSearch, setSubjectSearch] = useState('');
@@ -57,9 +58,10 @@ export default function CoordinatorDashboard() {
   const [pendingDelete, setPendingDelete] = useState<{ type: 'course' | 'subject' | 'student' | 'teacher'; id: string; label: string } | null>(null);
 
   const [courseForm, setCourseForm] = useState({ name: '', code: '', academic_year: '', section: '', description: '' });
-  const [subjectForm, setSubjectForm] = useState({ name: '', code: '', description: '' });
+  const [subjectForm, setSubjectForm] = useState({ name: '', description: '' });
   const [studentForm, setStudentForm] = useState({ nombre: '', email: '', curso_id: '' });
   const [teacherForm, setTeacherForm] = useState({ nombre: '', email: '', materia_id: '', curso_id: '' });
+  const [courseAssignmentForm, setCourseAssignmentForm] = useState({ materia_id: '', profesor_id: '' });
 
   useEffect(() => {
     void loadAll();
@@ -91,7 +93,7 @@ export default function CoordinatorDashboard() {
   }
 
   const filteredCourses = useMemo(() => courses.filter((i) => `${i.name} ${i.code}`.toLowerCase().includes(courseSearch.toLowerCase())), [courses, courseSearch]);
-  const filteredSubjects = useMemo(() => subjects.filter((i) => `${i.name} ${i.code}`.toLowerCase().includes(subjectSearch.toLowerCase())), [subjects, subjectSearch]);
+  const filteredSubjects = useMemo(() => subjects.filter((i) => `${i.name}`.toLowerCase().includes(subjectSearch.toLowerCase())), [subjects, subjectSearch]);
   const filteredStudents = useMemo(() => estudiantes.filter((i) => `${i.nombre} ${i.email} ${i.cursos?.nombre ?? ''}`.toLowerCase().includes(studentSearch.toLowerCase())), [estudiantes, studentSearch]);
   const filteredTeachers = useMemo(() => profesores.filter((i) => `${i.nombre} ${i.email} ${i.profesor_materia_curso?.[0]?.materias?.nombre ?? ''}`.toLowerCase().includes(teacherSearch.toLowerCase())), [profesores, teacherSearch]);
   const selectedCourse = useMemo(
@@ -109,13 +111,30 @@ export default function CoordinatorDashboard() {
           .filter((assignment) => assignment.cursos?.id === selectedCourse?.id)
           .map((assignment) => ({
             id: assignment.id,
+            materiaId: assignment.materias?.id ?? '',
             materia: assignment.materias?.nombre ?? 'Materia sin nombre',
+            profesorId: teacher.id,
             profesor: teacher.nombre,
             profesorEmail: teacher.email,
           })),
       ),
     [profesores, selectedCourse],
   );
+  const assignedMateriaIds = useMemo(
+    () => new Set(selectedCourseAssignments.map((assignment) => assignment.materiaId).filter(Boolean)),
+    [selectedCourseAssignments],
+  );
+  const availableMateriasForCourse = useMemo(
+    () => materias.filter((materia) => !assignedMateriaIds.has(materia.id)),
+    [materias, assignedMateriaIds],
+  );
+  const availableTeachersForSelectedMateria = useMemo(() => {
+    if (!courseAssignmentForm.materia_id) return [];
+
+    return profesores.filter((teacher) =>
+      (teacher.profesor_materia_curso ?? []).some((assignment) => assignment.materias?.id === courseAssignmentForm.materia_id),
+    );
+  }, [profesores, courseAssignmentForm.materia_id]);
   const isCourseDetailView = section === 'cursos' && !!selectedCourse;
 
   useEffect(() => {
@@ -132,6 +151,15 @@ export default function CoordinatorDashboard() {
   useEffect(() => {
     setCourseDetailTab('materias');
   }, [selectedCourseId]);
+
+  useEffect(() => {
+    setCourseAssignmentForm((current) => {
+      if (!current.profesor_id) return current;
+      const teacherStillAvailable = availableTeachersForSelectedMateria.some((teacher) => teacher.id === current.profesor_id);
+      if (teacherStillAvailable) return current;
+      return { ...current, profesor_id: '' };
+    });
+  }, [availableTeachersForSelectedMateria]);
 
   function pageRows<T>(rows: T[], page: number) {
     const start = (page - 1) * PAGE_SIZE;
@@ -152,10 +180,10 @@ export default function CoordinatorDashboard() {
   function openSubjectModal(item?: Subject) {
     if (item) {
       setEditingSubject(item);
-      setSubjectForm({ name: item.name, code: item.code, description: item.description ?? '' });
+      setSubjectForm({ name: item.name, description: item.description ?? '' });
     } else {
       setEditingSubject(null);
-      setSubjectForm({ name: '', code: '', description: '' });
+      setSubjectForm({ name: '', description: '' });
     }
     setSubjectModal(true);
   }
@@ -199,8 +227,8 @@ export default function CoordinatorDashboard() {
   async function saveSubject(e: React.FormEvent) {
     e.preventDefault();
     try {
-      if (editingSubject) await subjectService.update(editingSubject.id, { ...subjectForm, code: subjectForm.code.toUpperCase() });
-      else await subjectService.create({ ...subjectForm, code: subjectForm.code.toUpperCase() });
+      if (editingSubject) await subjectService.update(editingSubject.id, subjectForm);
+      else await subjectService.create(subjectForm);
       setSubjectModal(false);
       setSuccess(editingSubject ? 'Materia actualizada.' : 'Materia creada.');
       await loadAll();
@@ -234,6 +262,39 @@ export default function CoordinatorDashboard() {
       await loadAll();
     } catch (err) {
       setError(formatError(err, 'No se pudo guardar el profesor.'));
+    }
+  }
+
+  function openCourseAssignmentModal() {
+    setCourseAssignmentForm({ materia_id: '', profesor_id: '' });
+    setCourseAssignmentModal(true);
+  }
+
+  async function saveCourseAssignment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selectedCourse?.id) return;
+
+    try {
+      await schoolService.assignMateriaToCurso({
+        curso_id: selectedCourse.id,
+        materia_id: courseAssignmentForm.materia_id,
+        profesor_id: courseAssignmentForm.profesor_id,
+      });
+      setCourseAssignmentModal(false);
+      setSuccess('Materia asignada al curso correctamente.');
+      await loadAll();
+    } catch (err) {
+      setError(formatError(err, 'No se pudo asignar la materia al curso.'));
+    }
+  }
+
+  async function removeCourseAssignment(assignmentId: string) {
+    try {
+      await schoolService.removeMateriaFromCurso(assignmentId);
+      setSuccess('Asignacion eliminada correctamente.');
+      await loadAll();
+    } catch (err) {
+      setError(formatError(err, 'No se pudo eliminar la asignacion.'));
     }
   }
 
@@ -455,32 +516,55 @@ export default function CoordinatorDashboard() {
                     </div>
 
                     {courseDetailTab === 'materias' ? (
-                      selectedCourseAssignments.length > 0 ? (
-                        <div className="grid gap-4 lg:grid-cols-2">
-                          {selectedCourseAssignments.map((assignment) => (
-                            <div key={assignment.id} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
-                              <div className="flex items-start justify-between gap-4">
-                                <div>
-                                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">Materia asociada</p>
-                                  <h3 className="mt-3 text-xl font-semibold tracking-tight text-text-primary">{assignment.materia}</h3>
-                                </div>
-                                <div className="rounded-2xl bg-sky-100 p-3 text-sky-700">
-                                  <BookOpen size={18} />
-                                </div>
-                              </div>
-                              <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-4">
-                                <p className="text-xs uppercase tracking-wide text-slate-500">Profesor asignado</p>
-                                <p className="mt-2 font-semibold text-text-primary">{assignment.profesor}</p>
-                                <p className="mt-1 text-sm text-text-secondary">{assignment.profesorEmail}</p>
-                              </div>
+                      <div className="space-y-4">
+                        <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+                          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-text-primary">Materias del curso</p>
+                              <p className="text-sm text-text-secondary">Agrega una materia nueva y elige el profesor que ya imparte esa materia.</p>
                             </div>
-                          ))}
+                            <Button
+                              type="button"
+                              onClick={openCourseAssignmentModal}
+                              disabled={availableMateriasForCourse.length === 0}
+                            >
+                              Asignar materia
+                            </Button>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
-                          <EmptyState title="Sin materias asignadas" description="Aun no hay materias con profesor asignado dentro de este curso." />
-                        </div>
-                      )
+
+                        {selectedCourseAssignments.length > 0 ? (
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            {selectedCourseAssignments.map((assignment) => (
+                              <div key={assignment.id} className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div>
+                                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">Materia asociada</p>
+                                    <h3 className="mt-3 text-xl font-semibold tracking-tight text-text-primary">{assignment.materia}</h3>
+                                  </div>
+                                  <div className="rounded-2xl bg-sky-100 p-3 text-sky-700">
+                                    <BookOpen size={18} />
+                                  </div>
+                                </div>
+                                <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-4">
+                                  <p className="text-xs uppercase tracking-wide text-slate-500">Profesor asignado</p>
+                                  <p className="mt-2 font-semibold text-text-primary">{assignment.profesor}</p>
+                                  <p className="mt-1 text-sm text-text-secondary">{assignment.profesorEmail}</p>
+                                </div>
+                                <div className="mt-4 flex justify-end">
+                                  <Button size="sm" type="button" variant="secondary" onClick={() => void removeCourseAssignment(assignment.id)}>
+                                    Quitar asignacion
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm">
+                            <EmptyState title="Sin materias asignadas" description="Aun no hay materias con profesor asignado dentro de este curso." />
+                          </div>
+                        )}
+                      </div>
                     ) : selectedCourseStudents.length > 0 ? (
                       <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
                         <div className="mb-4 flex items-center justify-between">
@@ -518,10 +602,10 @@ export default function CoordinatorDashboard() {
                   <Button type="button" onClick={() => openSubjectModal()}>Crear materia</Button>
                 </div>
                 {filteredSubjects.length === 0 ? <EmptyState title="Sin materias" description="Crea la primera materia." /> : (
-                  <DataTable headers={['Nombre', 'Codigo', 'Acciones']}>
+                  <DataTable headers={['Nombre', 'Acciones']}>
                     {pageRows(filteredSubjects, subjectPage).map((subject) => (
                       <tr key={subject.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 text-sm">{subject.name}</td><td className="px-4 py-3 text-sm">{subject.code}</td>
+                        <td className="px-4 py-3 text-sm">{subject.name}</td>
                         <td className="px-4 py-3 text-sm"><div className="flex gap-2"><Button size="sm" type="button" onClick={() => openSubjectModal(subject)}>Editar</Button><Button size="sm" type="button" variant="danger" onClick={() => setPendingDelete({ type: 'subject', id: subject.id, label: subject.name })}>Eliminar</Button></div></td>
                       </tr>
                     ))}
@@ -589,7 +673,6 @@ export default function CoordinatorDashboard() {
       <Modal open={subjectModal} title={editingSubject ? 'Editar materia' : 'Crear materia'} onClose={() => setSubjectModal(false)}>
         <form className="space-y-3" onSubmit={saveSubject}>
           <Input label="Nombre" value={subjectForm.name} onChange={(e) => setSubjectForm((c) => ({ ...c, name: e.target.value }))} required />
-          <Input label="Codigo" value={subjectForm.code} onChange={(e) => setSubjectForm((c) => ({ ...c, code: e.target.value }))} required />
           <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setSubjectModal(false)}>Cancelar</Button><Button type="submit">Guardar</Button></div>
         </form>
       </Modal>
@@ -610,6 +693,69 @@ export default function CoordinatorDashboard() {
           <div><label className="mb-2 block text-sm font-medium">Materia</label><select className="w-full rounded-xl border border-gray-300 px-3 py-2" value={teacherForm.materia_id} onChange={(e) => setTeacherForm((c) => ({ ...c, materia_id: e.target.value }))} required><option value="">Selecciona una materia</option>{materias.map((materia) => <option key={materia.id} value={materia.id}>{materia.nombre}</option>)}</select></div>
           <div><label className="mb-2 block text-sm font-medium">Curso</label><select className="w-full rounded-xl border border-gray-300 px-3 py-2" value={teacherForm.curso_id} onChange={(e) => setTeacherForm((c) => ({ ...c, curso_id: e.target.value }))} required><option value="">Selecciona un curso</option>{cursos.map((curso) => <option key={curso.id} value={curso.id}>{curso.nombre} - {curso.nivel}</option>)}</select></div>
           <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setTeacherModal(false)}>Cancelar</Button><Button type="submit">Guardar</Button></div>
+        </form>
+      </Modal>
+
+      <Modal open={courseAssignmentModal} title="Asignar materia al curso" onClose={() => setCourseAssignmentModal(false)}>
+        <form className="space-y-4" onSubmit={saveCourseAssignment}>
+          {selectedCourse && (
+            <div className="rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-sky-700">Curso seleccionado</p>
+              <p className="mt-2 text-base font-semibold text-text-primary">{selectedCourse.name}</p>
+              <p className="mt-1 text-sm text-text-secondary">
+                {selectedCourse.code}
+                {(selectedCourse.academic_year || selectedCourse.section) && ` · ${[selectedCourse.academic_year, selectedCourse.section].filter(Boolean).join(' / ')}`}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">Materia</label>
+            <select
+              className="w-full rounded-xl border border-gray-300 px-3 py-2"
+              value={courseAssignmentForm.materia_id}
+              onChange={(e) => setCourseAssignmentForm({ materia_id: e.target.value, profesor_id: '' })}
+              required
+            >
+              <option value="">Selecciona una materia</option>
+              {availableMateriasForCourse.map((materia) => (
+                <option key={materia.id} value={materia.id}>
+                  {materia.nombre}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-text-secondary">Solo se muestran materias que aun no estan asignadas a este curso.</p>
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-medium">Profesor que imparte esta materia</label>
+            <select
+              className="w-full rounded-xl border border-gray-300 px-3 py-2"
+              value={courseAssignmentForm.profesor_id}
+              onChange={(e) => setCourseAssignmentForm((current) => ({ ...current, profesor_id: e.target.value }))}
+              disabled={!courseAssignmentForm.materia_id || availableTeachersForSelectedMateria.length === 0}
+              required
+            >
+              <option value="">
+                {!courseAssignmentForm.materia_id
+                  ? 'Primero selecciona una materia'
+                  : availableTeachersForSelectedMateria.length === 0
+                    ? 'No hay profesores asociados a esta materia'
+                    : 'Selecciona un profesor'}
+              </option>
+              {availableTeachersForSelectedMateria.map((teacher) => (
+                <option key={teacher.id} value={teacher.id}>
+                  {teacher.nombre} - {teacher.email}
+                </option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-text-secondary">Aqui se muestran los profesores que ya tienen esa materia entre sus asignaciones.</p>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setCourseAssignmentModal(false)}>Cancelar</Button>
+            <Button type="submit" disabled={!courseAssignmentForm.materia_id || !courseAssignmentForm.profesor_id}>Guardar asignacion</Button>
+          </div>
         </form>
       </Modal>
 

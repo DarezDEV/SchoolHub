@@ -31,7 +31,6 @@ export interface CoursePayload {
 
 export interface SubjectPayload {
   name: string;
-  code: string;
   description?: string;
   active?: boolean;
 }
@@ -45,6 +44,12 @@ export interface EstudiantePayload {
 export interface ProfesorPayload {
   nombre: string;
   email: string;
+  materia_id: string;
+  curso_id: string;
+}
+
+export interface CourseSubjectAssignmentPayload {
+  profesor_id: string;
   materia_id: string;
   curso_id: string;
 }
@@ -111,6 +116,69 @@ async function updateTeacherAssignment(params: { assignmentId: string; materiaId
 
   if (fallbackTry.error) {
     throw new Error(fallbackTry.error.message || firstTry.error.message || 'No se pudo actualizar la asignacion del profesor.');
+  }
+}
+
+async function insertCourseSubjectAssignment(params: CourseSubjectAssignmentPayload) {
+  const [
+    { data: teacherExists, error: teacherError },
+    { data: subjectExists, error: subjectError },
+    { data: courseExists, error: courseError },
+    { data: courseAssignments, error: courseAssignmentsError },
+    { data: teacherSubjectAssignment, error: teacherSubjectError },
+  ] = await Promise.all([
+    supabase.from('profesores').select('id').eq('id', params.profesor_id).maybeSingle(),
+    supabase.from('subjects').select('id').eq('id', params.materia_id).maybeSingle(),
+    supabase.from('courses').select('id').eq('id', params.curso_id).maybeSingle(),
+    supabase
+      .from('profesor_materia_curso')
+      .select('id,materia_id,subject_id,curso_id,course_id')
+      .or(`curso_id.eq.${params.curso_id},course_id.eq.${params.curso_id}`),
+    supabase
+      .from('profesor_materia_curso')
+      .select('id')
+      .eq('profesor_id', params.profesor_id)
+      .or(`materia_id.eq.${params.materia_id},subject_id.eq.${params.materia_id}`)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const duplicateAssignment = (courseAssignments ?? []).find((assignment: any) => {
+    const mapped = mapAssignmentColumns(assignment);
+    return mapped.cursoId === params.curso_id && mapped.materiaId === params.materia_id;
+  });
+
+  if (teacherError) throw new Error(teacherError.message || 'No se pudo validar el profesor.');
+  if (subjectError) throw new Error(subjectError.message || 'No se pudo validar la materia.');
+  if (courseError) throw new Error(courseError.message || 'No se pudo validar el curso.');
+  if (courseAssignmentsError) throw new Error(courseAssignmentsError.message || 'No se pudo validar la asignacion actual del curso.');
+  if (teacherSubjectError) throw new Error(teacherSubjectError.message || 'No se pudo validar la materia del profesor.');
+  if (!teacherExists) throw new Error('El profesor seleccionado no existe o fue eliminado.');
+  if (!subjectExists) throw new Error('La materia seleccionada no existe o fue eliminada.');
+  if (!courseExists) throw new Error('El curso seleccionado no existe o fue eliminado.');
+  if (duplicateAssignment) throw new Error('Este curso ya tiene un profesor asignado para esa materia.');
+  if (!teacherSubjectAssignment) throw new Error('El profesor seleccionado no tiene esa materia asociada actualmente.');
+
+  const firstTry = await supabase.from('profesor_materia_curso').insert({
+    profesor_id: params.profesor_id,
+    materia_id: params.materia_id,
+    curso_id: params.curso_id,
+  });
+
+  if (!firstTry.error) return;
+
+  const fallbackTry = await supabase.from('profesor_materia_curso').insert({
+    profesor_id: params.profesor_id,
+    subject_id: params.materia_id,
+    course_id: params.curso_id,
+  } as any);
+
+  if (fallbackTry.error) {
+    const message = fallbackTry.error.message || firstTry.error?.message || 'No se pudo crear la asignacion del curso.';
+    if (message.includes('profesor_materia_curso_profesor_id_key')) {
+      throw new Error('La interfaz ya evita repetir materias por curso. Si este error sigue saliendo, falta aplicar la migracion que permite que un profesor tenga varios cursos con la misma materia.');
+    }
+    throw new Error(fallbackTry.error.message || firstTry.error.message || 'No se pudo crear la asignacion del curso.');
   }
 }
 
@@ -388,6 +456,7 @@ export const schoolService = {
       .from('profesor_materia_curso')
       .select('id')
       .eq('profesor_id', id)
+      .limit(1)
       .maybeSingle();
 
     if (assignmentFetchError) throw new Error(assignmentFetchError.message || 'No se pudo leer la asignacion.');
@@ -418,6 +487,7 @@ export const schoolService = {
       .from('profesor_materia_curso')
       .select('*')
       .eq('profesor_id', profesorId)
+      .limit(1)
       .maybeSingle();
 
     if (error) throw new Error(error.message || 'No se pudo leer la asignacion del profesor.');
@@ -429,5 +499,18 @@ export const schoolService = {
       materia_id: mapped.materiaId ?? '',
       curso_id: mapped.cursoId ?? '',
     } as ProfesorMateriaCurso;
+  },
+
+  async assignMateriaToCurso(payload: CourseSubjectAssignmentPayload): Promise<void> {
+    if (!payload.profesor_id || !payload.materia_id || !payload.curso_id) {
+      throw new Error('Debe seleccionar curso, materia y profesor.');
+    }
+
+    await insertCourseSubjectAssignment(payload);
+  },
+
+  async removeMateriaFromCurso(assignmentId: string): Promise<void> {
+    const { error } = await supabase.from('profesor_materia_curso').delete().eq('id', assignmentId);
+    if (error) throw new Error(error.message || 'No se pudo eliminar la asignacion del curso.');
   },
 };
