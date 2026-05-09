@@ -21,6 +21,7 @@ export interface Profile {
   name: string;
   last_name: string;
   email: string;
+  role: RoleName;
   active: boolean;
   created_at: string;
   avatar_url?: string;
@@ -125,4 +126,13 @@ export interface ProfesorListItem extends Profesor {
     materias: Pick<Materia, 'id' | 'nombre'>;
     cursos: Pick<Curso, 'id' | 'nombre' | 'nivel'>;
   }[];
+}
+
+export interface UserListItem {
+  id: string;
+  name: string;
+  email: string;
+  role: RoleName | null;
+  active: boolean;
+  created_at: string;
 }

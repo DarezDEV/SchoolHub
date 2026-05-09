@@ -9,6 +9,8 @@ import type {
   Profesor,
   ProfesorListItem,
   ProfesorMateriaCurso,
+  UserListItem,
+  RoleName,
 } from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
@@ -19,6 +21,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+function parseFunctionError(error: unknown): Error {
+  const messageFromError = error instanceof Error ? error.message : '';
+  const context = (error as any)?.context;
+  const contextError = context?.error || context?.message;
+  const finalMessage =
+    contextError ||
+    messageFromError ||
+    'Error en la funcion remota.';
+  return new Error(finalMessage);
+}
 
 export interface CoursePayload {
   name: string;
@@ -54,64 +67,6 @@ function mapAssignmentColumns(record: any): { materiaId: string | null; cursoId:
     materiaId: record?.materia_id ?? record?.subject_id ?? null,
     cursoId: record?.curso_id ?? record?.course_id ?? null,
   };
-}
-
-async function insertTeacherAssignment(params: { profesorId: string; materiaId: string; cursoId: string }) {
-  const [{ data: subjectExists, error: subjectError }, { data: courseExists, error: courseError }] = await Promise.all([
-    supabase.from('subjects').select('id').eq('id', params.materiaId).maybeSingle(),
-    supabase.from('courses').select('id').eq('id', params.cursoId).maybeSingle(),
-  ]);
-
-  if (subjectError) throw new Error(subjectError.message || 'No se pudo validar la materia.');
-  if (courseError) throw new Error(courseError.message || 'No se pudo validar el curso.');
-  if (!subjectExists) throw new Error('La materia seleccionada no existe o fue eliminada. Vuelve a seleccionarla.');
-  if (!courseExists) throw new Error('El curso seleccionado no existe o fue eliminado. Vuelve a seleccionarlo.');
-
-  const firstTry = await supabase.from('profesor_materia_curso').insert({
-    profesor_id: params.profesorId,
-    materia_id: params.materiaId,
-    curso_id: params.cursoId,
-  });
-
-  if (!firstTry.error) return;
-
-  const fallbackTry = await supabase.from('profesor_materia_curso').insert({
-    profesor_id: params.profesorId,
-    subject_id: params.materiaId,
-    course_id: params.cursoId,
-  } as any);
-
-  if (fallbackTry.error) {
-    throw new Error(fallbackTry.error.message || firstTry.error.message || 'No se pudo crear la asignacion del profesor.');
-  }
-}
-
-async function updateTeacherAssignment(params: { assignmentId: string; materiaId: string; cursoId: string }) {
-  const [{ data: subjectExists, error: subjectError }, { data: courseExists, error: courseError }] = await Promise.all([
-    supabase.from('subjects').select('id').eq('id', params.materiaId).maybeSingle(),
-    supabase.from('courses').select('id').eq('id', params.cursoId).maybeSingle(),
-  ]);
-
-  if (subjectError) throw new Error(subjectError.message || 'No se pudo validar la materia.');
-  if (courseError) throw new Error(courseError.message || 'No se pudo validar el curso.');
-  if (!subjectExists) throw new Error('La materia seleccionada no existe o fue eliminada. Vuelve a seleccionarla.');
-  if (!courseExists) throw new Error('El curso seleccionado no existe o fue eliminado. Vuelve a seleccionarlo.');
-
-  const firstTry = await supabase
-    .from('profesor_materia_curso')
-    .update({ materia_id: params.materiaId, curso_id: params.cursoId })
-    .eq('id', params.assignmentId);
-
-  if (!firstTry.error) return;
-
-  const fallbackTry = await supabase
-    .from('profesor_materia_curso')
-    .update({ subject_id: params.materiaId, course_id: params.cursoId } as any)
-    .eq('id', params.assignmentId);
-
-  if (fallbackTry.error) {
-    throw new Error(fallbackTry.error.message || firstTry.error.message || 'No se pudo actualizar la asignacion del profesor.');
-  }
 }
 
 export const courseService = {
@@ -207,6 +162,69 @@ export const subjectService = {
 };
 
 export const schoolService = {
+  async listUsers(): Promise<UserListItem[]> {
+    const [profilesRes, rolesRes] = await Promise.all([
+      supabase.from('profiles').select('id,name,email,role,course_id,active,created_at').order('created_at', { ascending: false }),
+      supabase.from('user_roles').select('user_id,roles(name)'),
+    ]);
+    if (profilesRes.error) throw profilesRes.error;
+    if (rolesRes.error) throw rolesRes.error;
+
+    const roleByUserId = new Map<string, RoleName>();
+    for (const row of rolesRes.data ?? []) {
+      const roleRaw = Array.isArray((row as any).roles) ? (row as any).roles[0]?.name : (row as any).roles?.name;
+      if (typeof roleRaw === 'string') roleByUserId.set((row as any).user_id, roleRaw as RoleName);
+    }
+
+    return (profilesRes.data ?? []).map((profile: any) => ({
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+      active: profile.active,
+      created_at: profile.created_at,
+      role: roleByUserId.get(profile.id) ?? ((profile.role ?? null) as RoleName | null),
+    })) as UserListItem[];
+  },
+
+  async inviteUser(payload: { name: string; email: string; role: RoleName; courseId?: string; subjectId?: string }) {
+    try {
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: { action: 'invite', ...payload },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      return data;
+    } catch (error) {
+      throw parseFunctionError(error);
+    }
+  },
+
+  async updateUser(payload: { userId: string; name?: string; email?: string; role?: RoleName; active?: boolean; courseId?: string | null; subjectId?: string | null }) {
+    try {
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: { action: 'update', ...payload },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      return data;
+    } catch (error) {
+      throw parseFunctionError(error);
+    }
+  },
+
+  async deleteUser(userId: string) {
+    try {
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: { action: 'delete', userId },
+      });
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
+      return data;
+    } catch (error) {
+      throw parseFunctionError(error);
+    }
+  },
+
   async listCursos(): Promise<Curso[]> {
     const { data, error } = await supabase.from('courses').select('*').order('name');
     if (error) throw error;
@@ -229,23 +247,26 @@ export const schoolService = {
   },
 
   async listEstudiantes(): Promise<EstudianteListItem[]> {
-    const [{ data: students, error: studentsError }, { data: courses, error: coursesError }] = await Promise.all([
-      supabase.from('estudiantes').select('id,nombre,email,curso_id,created_at').order('created_at', { ascending: false }),
+    const [users, coursesRes] = await Promise.all([
+      schoolService.listUsers(),
       supabase.from('courses').select('id,name,academic_year,section'),
     ]);
+    if (coursesRes.error) throw coursesRes.error;
+    const students = users.filter((u) => u.role === 'student');
 
-    if (studentsError) throw studentsError;
-    if (coursesError) throw coursesError;
-
-    const courseById = new Map((courses ?? []).map((course: any) => [course.id, course]));
+    const profilesRes = await supabase.from('profiles').select('id,course_id');
+    if (profilesRes.error) throw profilesRes.error;
+    const courseIdByUserId = new Map((profilesRes.data ?? []).map((p: any) => [p.id, p.course_id]));
+    const courseById = new Map((coursesRes.data ?? []).map((course: any) => [course.id, course]));
 
     return (students ?? []).map((item: any) => {
-      const course = courseById.get(item.curso_id);
+      const courseId = courseIdByUserId.get(item.id);
+      const course = courseById.get(courseId);
       return {
         id: item.id,
-        nombre: item.nombre,
+        nombre: item.name,
         email: item.email,
-        curso_id: item.curso_id,
+        curso_id: courseId,
         created_at: item.created_at,
         cursos: course
           ? {
@@ -260,34 +281,42 @@ export const schoolService = {
 
   async createEstudiante(payload: EstudiantePayload): Promise<Estudiante> {
     if (!payload.curso_id) throw new Error('Debe seleccionar un curso.');
-
-    const { data, error } = await supabase
-      .from('estudiantes')
-      .insert(payload)
-      .select('*')
-      .single();
-
-    if (error) throw error;
-    return data as Estudiante;
+    await schoolService.inviteUser({
+      name: payload.nombre,
+      email: payload.email,
+      role: 'student',
+      courseId: payload.curso_id,
+    });
+    return {
+      id: '',
+      nombre: payload.nombre,
+      email: payload.email,
+      curso_id: payload.curso_id,
+      created_at: new Date().toISOString(),
+    };
   },
 
   async updateEstudiante(id: string, payload: EstudiantePayload): Promise<Estudiante> {
     if (!payload.curso_id) throw new Error('Debe seleccionar un curso.');
 
-    const { data, error } = await supabase
-      .from('estudiantes')
-      .update(payload)
-      .eq('id', id)
-      .select('*')
-      .single();
-
-    if (error) throw error;
-    return data as Estudiante;
+    await schoolService.updateUser({
+      userId: id,
+      name: payload.nombre,
+      email: payload.email,
+      role: 'student',
+      courseId: payload.curso_id,
+    });
+    return {
+      id,
+      nombre: payload.nombre,
+      email: payload.email,
+      curso_id: payload.curso_id,
+      created_at: new Date().toISOString(),
+    };
   },
 
   async deleteEstudiante(id: string): Promise<void> {
-    const { error } = await supabase.from('estudiantes').delete().eq('id', id);
-    if (error) throw error;
+    await schoolService.deleteUser(id);
   },
 
   async listProfesores(): Promise<ProfesorListItem[]> {
@@ -297,7 +326,7 @@ export const schoolService = {
       { data: subjects, error: subjectsError },
       { data: courses, error: coursesError },
     ] = await Promise.all([
-      supabase.from('profesores').select('id,nombre,email,created_at').order('created_at', { ascending: false }),
+      supabase.from('vw_teachers').select('id,name,email,created_at').order('created_at', { ascending: false }),
       supabase.from('profesor_materia_curso').select('*'),
       supabase.from('subjects').select('id,name'),
       supabase.from('courses').select('id,name,academic_year,section'),
@@ -315,7 +344,7 @@ export const schoolService = {
       const teacherAssignments = (assignments ?? []).filter((assignment: any) => assignment.profesor_id === teacher.id);
       return {
         id: teacher.id,
-        nombre: teacher.nombre,
+        nombre: teacher.name,
         email: teacher.email,
         created_at: teacher.created_at,
         profesor_materia_curso: teacherAssignments.map((assignment: any) => {
@@ -348,28 +377,19 @@ export const schoolService = {
       throw new Error('Debe seleccionar materia y curso.');
     }
 
-    const { data: profesor, error: profesorError } = await supabase
-      .from('profesores')
-      .insert({ nombre: payload.nombre, email: payload.email })
-      .select('*')
-      .single();
-
-    if (profesorError || !profesor) throw new Error(profesorError?.message || 'No se pudo crear el profesor.');
-
-    try {
-      await insertTeacherAssignment({
-        profesorId: profesor.id,
-        materiaId: payload.materia_id,
-        cursoId: payload.curso_id,
-      });
-    } catch (assignmentError) {
-      await supabase.from('profesores').delete().eq('id', profesor.id);
-      throw assignmentError instanceof Error
-        ? assignmentError
-        : new Error('No se pudo crear la asignacion del profesor.');
-    }
-
-    return profesor as Profesor;
+    await schoolService.inviteUser({
+      name: payload.nombre,
+      email: payload.email,
+      role: 'teacher',
+      subjectId: payload.materia_id,
+      courseId: payload.curso_id,
+    });
+    return {
+      id: '',
+      nombre: payload.nombre,
+      email: payload.email,
+      created_at: new Date().toISOString(),
+    };
   },
 
   async updateProfesor(id: string, payload: ProfesorPayload): Promise<void> {
@@ -377,40 +397,18 @@ export const schoolService = {
       throw new Error('Debe seleccionar materia y curso.');
     }
 
-    const { error: profesorError } = await supabase
-      .from('profesores')
-      .update({ nombre: payload.nombre, email: payload.email })
-      .eq('id', id);
-
-    if (profesorError) throw new Error(profesorError.message || 'No se pudo actualizar el profesor.');
-
-    const { data: currentAssignment, error: assignmentFetchError } = await supabase
-      .from('profesor_materia_curso')
-      .select('id')
-      .eq('profesor_id', id)
-      .maybeSingle();
-
-    if (assignmentFetchError) throw new Error(assignmentFetchError.message || 'No se pudo leer la asignacion.');
-
-    if (currentAssignment?.id) {
-      await updateTeacherAssignment({
-        assignmentId: currentAssignment.id,
-        materiaId: payload.materia_id,
-        cursoId: payload.curso_id,
-      });
-      return;
-    }
-
-    await insertTeacherAssignment({
-      profesorId: id,
-      materiaId: payload.materia_id,
-      cursoId: payload.curso_id,
+    await schoolService.updateUser({
+      userId: id,
+      name: payload.nombre,
+      email: payload.email,
+      role: 'teacher',
+      subjectId: payload.materia_id,
+      courseId: payload.curso_id,
     });
   },
 
   async deleteProfesor(id: string): Promise<void> {
-    const { error } = await supabase.from('profesores').delete().eq('id', id);
-    if (error) throw error;
+    await schoolService.deleteUser(id);
   },
 
   async getProfesorAssignment(profesorId: string): Promise<ProfesorMateriaCurso | null> {
@@ -429,5 +427,5 @@ export const schoolService = {
       materia_id: mapped.materiaId ?? '',
       curso_id: mapped.cursoId ?? '',
     } as ProfesorMateriaCurso;
-  },
+   },
 };
