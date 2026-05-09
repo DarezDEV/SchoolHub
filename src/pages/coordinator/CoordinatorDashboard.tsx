@@ -4,7 +4,7 @@ import { ArrowLeft, BookOpen, GraduationCap, LayoutGrid, UserSquare2 } from 'luc
 import MainLayout from '../../layouts/MainLayout';
 import { Button, Input } from '../../components/common';
 import { courseService, schoolService, subjectService } from '../../services/supabase';
-import type { Course, Subject, Curso, EstudianteListItem, Materia, ProfesorListItem } from '../../types';
+import type { Course, Subject, Curso, EstudianteListItem, Materia, ProfesorListItem, RoleName, UserListItem } from '../../types';
 import { ConfirmDialog, DashboardCard, DataTable, EmptyState, LoadingSkeleton, Modal, PageHeader } from '../../components/ui';
 
 type SectionKey = 'dashboard' | 'cursos' | 'materias' | 'estudiantes' | 'profesores' | 'usuarios' | 'reportes' | 'configuracion';
@@ -27,6 +27,7 @@ export default function CoordinatorDashboard() {
   const [materias, setMaterias] = useState<Materia[]>([]);
   const [estudiantes, setEstudiantes] = useState<EstudianteListItem[]>([]);
   const [profesores, setProfesores] = useState<ProfesorListItem[]>([]);
+  const [users, setUsers] = useState<UserListItem[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,12 +37,15 @@ export default function CoordinatorDashboard() {
   const [subjectModal, setSubjectModal] = useState(false);
   const [studentModal, setStudentModal] = useState(false);
   const [teacherModal, setTeacherModal] = useState(false);
+  const [userModal, setUserModal] = useState(false);
   const [courseAssignmentModal, setCourseAssignmentModal] = useState(false);
 
   const [courseSearch, setCourseSearch] = useState('');
   const [subjectSearch, setSubjectSearch] = useState('');
   const [studentSearch, setStudentSearch] = useState('');
   const [teacherSearch, setTeacherSearch] = useState('');
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | RoleName>('all');
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [courseDetailTab, setCourseDetailTab] = useState<'materias' | 'estudiantes'>('materias');
 
@@ -54,13 +58,20 @@ export default function CoordinatorDashboard() {
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [editingStudent, setEditingStudent] = useState<EstudianteListItem | null>(null);
   const [editingTeacher, setEditingTeacher] = useState<ProfesorListItem | null>(null);
+  const [editingUser, setEditingUser] = useState<UserListItem | null>(null);
 
-  const [pendingDelete, setPendingDelete] = useState<{ type: 'course' | 'subject' | 'student' | 'teacher'; id: string; label: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ type: 'course' | 'subject' | 'student' | 'teacher' | 'user'; id: string; label: string } | null>(null);
 
   const [courseForm, setCourseForm] = useState({ name: '', code: '', academic_year: '', section: '', description: '' });
   const [subjectForm, setSubjectForm] = useState({ name: '', description: '' });
   const [studentForm, setStudentForm] = useState({ nombre: '', email: '', curso_id: '' });
   const [teacherForm, setTeacherForm] = useState({ nombre: '', email: '', materia_id: '', curso_id: '' });
+  const [userForm, setUserForm] = useState<{ name: string; email: string; role: RoleName; active: boolean }>({
+    name: '',
+    email: '',
+    role: 'student',
+    active: true,
+  });
   const [courseAssignmentForm, setCourseAssignmentForm] = useState({ materia_id: '', profesor_id: '' });
 
   useEffect(() => {
@@ -70,13 +81,14 @@ export default function CoordinatorDashboard() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [courseData, subjectData, cursoData, materiaData, studentData, teacherData] = await Promise.all([
+      const [courseData, subjectData, cursoData, materiaData, studentData, teacherData, usersData] = await Promise.all([
         courseService.list(),
         subjectService.list(),
         schoolService.listCursos(),
         schoolService.listMaterias(),
         schoolService.listEstudiantes(),
         schoolService.listProfesores(),
+        schoolService.listUsers(),
       ]);
       setCourses(courseData);
       setSubjects(subjectData);
@@ -84,6 +96,7 @@ export default function CoordinatorDashboard() {
       setMaterias(materiaData);
       setEstudiantes(studentData);
       setProfesores(teacherData);
+      setUsers(usersData);
       setError(null);
     } catch (e) {
       setError(formatError(e, 'No se pudo cargar la informacion.'));
@@ -96,6 +109,14 @@ export default function CoordinatorDashboard() {
   const filteredSubjects = useMemo(() => subjects.filter((i) => `${i.name}`.toLowerCase().includes(subjectSearch.toLowerCase())), [subjects, subjectSearch]);
   const filteredStudents = useMemo(() => estudiantes.filter((i) => `${i.nombre} ${i.email} ${i.cursos?.nombre ?? ''}`.toLowerCase().includes(studentSearch.toLowerCase())), [estudiantes, studentSearch]);
   const filteredTeachers = useMemo(() => profesores.filter((i) => `${i.nombre} ${i.email} ${i.profesor_materia_curso?.[0]?.materias?.nombre ?? ''}`.toLowerCase().includes(teacherSearch.toLowerCase())), [profesores, teacherSearch]);
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.toLowerCase();
+    return users.filter((u) => {
+      const matchesSearch = `${u.name} ${u.email} ${u.role ?? ''}`.toLowerCase().includes(q);
+      const matchesRole = userRoleFilter === 'all' || u.role === userRoleFilter;
+      return matchesSearch && matchesRole;
+    });
+  }, [users, userSearch, userRoleFilter]);
   const selectedCourse = useMemo(
     () => courses.find((course) => course.id === selectedCourseId) ?? null,
     [courses, selectedCourseId],
@@ -211,6 +232,22 @@ export default function CoordinatorDashboard() {
     setTeacherModal(true);
   }
 
+  function openUserModal(item?: UserListItem) {
+    if (item) {
+      setEditingUser(item);
+      setUserForm({
+        name: item.name,
+        email: item.email,
+        role: (item.role ?? 'student') as RoleName,
+        active: item.active,
+      });
+    } else {
+      setEditingUser(null);
+      setUserForm({ name: '', email: '', role: 'student', active: true });
+    }
+    setUserModal(true);
+  }
+
   async function saveCourse(e: React.FormEvent) {
     e.preventDefault();
     try {
@@ -265,6 +302,36 @@ export default function CoordinatorDashboard() {
     }
   }
 
+  async function saveUser(e: React.FormEvent) {
+    e.preventDefault();
+    try {
+      if (!userForm.name.trim()) throw new Error('El nombre es obligatorio.');
+      if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(userForm.email.trim().toLowerCase())) {
+        throw new Error('Email invalido.');
+      }
+
+      if (editingUser) {
+        await schoolService.updateUser({
+          userId: editingUser.id,
+          name: userForm.name.trim(),
+          email: userForm.email.trim().toLowerCase(),
+          role: userForm.role,
+          active: userForm.active,
+        });
+        setSuccess('Usuario actualizado.');
+      } else {
+        await schoolService.inviteUser({
+          name: userForm.name.trim(),
+          email: userForm.email.trim().toLowerCase(),
+          role: userForm.role,
+        });
+        setSuccess('Invitacion enviada.');
+      }
+
+      setUserModal(false);
+      await loadAll();
+    } catch (err) {
+      setError(formatError(err, 'No se pudo guardar el usuario.'));
   function openCourseAssignmentModal() {
     setCourseAssignmentForm({ materia_id: '', profesor_id: '' });
     setCourseAssignmentModal(true);
@@ -305,6 +372,7 @@ export default function CoordinatorDashboard() {
       if (pendingDelete.type === 'subject') await subjectService.remove(pendingDelete.id);
       if (pendingDelete.type === 'student') await schoolService.deleteEstudiante(pendingDelete.id);
       if (pendingDelete.type === 'teacher') await schoolService.deleteProfesor(pendingDelete.id);
+      if (pendingDelete.type === 'user') await schoolService.deleteUser(pendingDelete.id);
       setPendingDelete(null);
       setSuccess('Registro eliminado correctamente.');
       await loadAll();
@@ -320,7 +388,7 @@ export default function CoordinatorDashboard() {
     { label: 'Profesores', value: profesores.length },
   ];
 
-  const unsupported = ['usuarios', 'reportes', 'configuracion'] as SectionKey[];
+  const unsupported = ['reportes', 'configuracion'] as SectionKey[];
 
   return (
     <MainLayout>
@@ -655,6 +723,62 @@ export default function CoordinatorDashboard() {
               </div>
             )}
 
+            {section === 'usuarios' && (
+              <div className="space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex w-full flex-col gap-3 sm:flex-row">
+                    <Input placeholder="Buscar usuario" value={userSearch} onChange={(e) => setUserSearch(e.target.value)} />
+                    <select
+                      className="rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      value={userRoleFilter}
+                      onChange={(e) => setUserRoleFilter(e.target.value as 'all' | RoleName)}
+                    >
+                      <option value="all">Todos los roles</option>
+                      <option value="director">Director</option>
+                      <option value="coordinator">Coordinador</option>
+                      <option value="teacher">Profesor</option>
+                      <option value="student">Estudiante</option>
+                    </select>
+                  </div>
+                  <Button type="button" onClick={() => openUserModal()}>Crear usuario</Button>
+                </div>
+
+                {filteredUsers.length === 0 ? (
+                  <EmptyState title="Sin usuarios" description="Invita el primer usuario institucional." />
+                ) : (
+                  <DataTable headers={['Nombre', 'Email', 'Rol', 'Estado', 'Acciones']}>
+                    {filteredUsers.map((user) => (
+                      <tr key={user.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 text-sm">{user.name}</td>
+                        <td className="px-4 py-3 text-sm">{user.email}</td>
+                        <td className="px-4 py-3 text-sm">{user.role ?? '-'}</td>
+                        <td className="px-4 py-3 text-sm">{user.active ? 'Activo' : 'Inactivo'}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <div className="flex gap-2">
+                            <Button size="sm" type="button" onClick={() => openUserModal(user)}>Editar</Button>
+                            <Button
+                              size="sm"
+                              type="button"
+                              variant="secondary"
+                              onClick={() =>
+                                void schoolService
+                                  .updateUser({ userId: user.id, active: !user.active })
+                                  .then(() => loadAll())
+                                  .catch((e) => setError(formatError(e, 'No se pudo cambiar estado.')))
+                              }
+                            >
+                              {user.active ? 'Desactivar' : 'Activar'}
+                            </Button>
+                            <Button size="sm" type="button" variant="danger" onClick={() => setPendingDelete({ type: 'user', id: user.id, label: user.email })}>Eliminar</Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </DataTable>
+                )}
+              </div>
+            )}
+
             {unsupported.includes(section) && <EmptyState title="Modulo en preparacion" description="Este apartado ya existe en la navegacion y se puede completar sin romper la nueva arquitectura." />}
           </>
         )}
@@ -696,6 +820,36 @@ export default function CoordinatorDashboard() {
         </form>
       </Modal>
 
+      <Modal open={userModal} title={editingUser ? 'Editar usuario' : 'Invitar usuario'} onClose={() => setUserModal(false)}>
+        <form className="space-y-3" onSubmit={saveUser}>
+          <Input label="Nombre" value={userForm.name} onChange={(e) => setUserForm((c) => ({ ...c, name: e.target.value }))} required />
+          <Input label="Email" type="email" value={userForm.email} onChange={(e) => setUserForm((c) => ({ ...c, email: e.target.value }))} required />
+          <div>
+            <label className="mb-2 block text-sm font-medium">Rol</label>
+            <select
+              className="w-full rounded-xl border border-gray-300 px-3 py-2"
+              value={userForm.role}
+              onChange={(e) => setUserForm((c) => ({ ...c, role: e.target.value as RoleName }))}
+            >
+              <option value="director">Director</option>
+              <option value="coordinator">Coordinador</option>
+              <option value="teacher">Profesor</option>
+              <option value="student">Estudiante</option>
+            </select>
+          </div>
+          {editingUser && (
+            <label className="flex items-center gap-2 text-sm text-text-secondary">
+              <input
+                type="checkbox"
+                checked={userForm.active}
+                onChange={(e) => setUserForm((c) => ({ ...c, active: e.target.checked }))}
+              />
+              Usuario activo
+            </label>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setUserModal(false)}>Cancelar</Button>
+            <Button type="submit">{editingUser ? 'Guardar' : 'Invitar'}</Button>
       <Modal open={courseAssignmentModal} title="Asignar materia al curso" onClose={() => setCourseAssignmentModal(false)}>
         <form className="space-y-4" onSubmit={saveCourseAssignment}>
           {selectedCourse && (

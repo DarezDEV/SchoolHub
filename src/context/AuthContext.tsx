@@ -17,20 +17,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const SESSION_KEY = 'schoolhub.session';
 const USER_KEY = 'schoolhub.user';
 
-function extractRoleName(value: unknown): RoleName | null {
-  if (Array.isArray(value)) {
-    const first = value[0] as { name?: unknown } | undefined;
-    return typeof first?.name === 'string' ? (first.name as RoleName) : null;
-  }
-
-  if (value && typeof value === 'object') {
-    const roleObj = value as { name?: unknown };
-    return typeof roleObj.name === 'string' ? (roleObj.name as RoleName) : null;
-  }
-
-  return null;
-}
-
 async function fetchUserData(supabaseUser: User): Promise<AuthUser> {
   const [profileRes, roleRes] = await Promise.all([
     supabase.from('profiles').select('*').eq('id', supabaseUser.id).maybeSingle(),
@@ -39,12 +25,17 @@ async function fetchUserData(supabaseUser: User): Promise<AuthUser> {
 
   if (profileRes.error) throw profileRes.error;
   if (roleRes.error) throw roleRes.error;
+  const profile = profileRes.data as Profile | null;
+  const roleRaw = Array.isArray((roleRes.data as any)?.roles)
+    ? (roleRes.data as any)?.roles?.[0]?.name
+    : (roleRes.data as any)?.roles?.name;
+  const role = (roleRaw ?? profile?.role ?? null) as RoleName | null;
 
   return {
     id: supabaseUser.id,
     email: supabaseUser.email ?? '',
-    profile: profileRes.data as Profile | null,
-    role: extractRoleName(roleRes.data?.roles ?? null),
+    profile,
+    role,
   };
 }
 
