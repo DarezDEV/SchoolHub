@@ -49,6 +49,71 @@ export interface ProfesorPayload {
   curso_id: string;
 }
 
+function mapAssignmentColumns(record: any): { materiaId: string | null; cursoId: string | null } {
+  return {
+    materiaId: record?.materia_id ?? record?.subject_id ?? null,
+    cursoId: record?.curso_id ?? record?.course_id ?? null,
+  };
+}
+
+async function insertTeacherAssignment(params: { profesorId: string; materiaId: string; cursoId: string }) {
+  const [{ data: subjectExists, error: subjectError }, { data: courseExists, error: courseError }] = await Promise.all([
+    supabase.from('subjects').select('id').eq('id', params.materiaId).maybeSingle(),
+    supabase.from('courses').select('id').eq('id', params.cursoId).maybeSingle(),
+  ]);
+
+  if (subjectError) throw new Error(subjectError.message || 'No se pudo validar la materia.');
+  if (courseError) throw new Error(courseError.message || 'No se pudo validar el curso.');
+  if (!subjectExists) throw new Error('La materia seleccionada no existe o fue eliminada. Vuelve a seleccionarla.');
+  if (!courseExists) throw new Error('El curso seleccionado no existe o fue eliminado. Vuelve a seleccionarlo.');
+
+  const firstTry = await supabase.from('profesor_materia_curso').insert({
+    profesor_id: params.profesorId,
+    materia_id: params.materiaId,
+    curso_id: params.cursoId,
+  });
+
+  if (!firstTry.error) return;
+
+  const fallbackTry = await supabase.from('profesor_materia_curso').insert({
+    profesor_id: params.profesorId,
+    subject_id: params.materiaId,
+    course_id: params.cursoId,
+  } as any);
+
+  if (fallbackTry.error) {
+    throw new Error(fallbackTry.error.message || firstTry.error.message || 'No se pudo crear la asignacion del profesor.');
+  }
+}
+
+async function updateTeacherAssignment(params: { assignmentId: string; materiaId: string; cursoId: string }) {
+  const [{ data: subjectExists, error: subjectError }, { data: courseExists, error: courseError }] = await Promise.all([
+    supabase.from('subjects').select('id').eq('id', params.materiaId).maybeSingle(),
+    supabase.from('courses').select('id').eq('id', params.cursoId).maybeSingle(),
+  ]);
+
+  if (subjectError) throw new Error(subjectError.message || 'No se pudo validar la materia.');
+  if (courseError) throw new Error(courseError.message || 'No se pudo validar el curso.');
+  if (!subjectExists) throw new Error('La materia seleccionada no existe o fue eliminada. Vuelve a seleccionarla.');
+  if (!courseExists) throw new Error('El curso seleccionado no existe o fue eliminado. Vuelve a seleccionarlo.');
+
+  const firstTry = await supabase
+    .from('profesor_materia_curso')
+    .update({ materia_id: params.materiaId, curso_id: params.cursoId })
+    .eq('id', params.assignmentId);
+
+  if (!firstTry.error) return;
+
+  const fallbackTry = await supabase
+    .from('profesor_materia_curso')
+    .update({ subject_id: params.materiaId, course_id: params.cursoId } as any)
+    .eq('id', params.assignmentId);
+
+  if (fallbackTry.error) {
+    throw new Error(fallbackTry.error.message || firstTry.error.message || 'No se pudo actualizar la asignacion del profesor.');
+  }
+}
+
 export const courseService = {
   async list(): Promise<Course[]> {
     const { data, error } = await supabase
@@ -143,32 +208,54 @@ export const subjectService = {
 
 export const schoolService = {
   async listCursos(): Promise<Curso[]> {
-    const { data, error } = await supabase.from('cursos').select('*').order('nombre');
-    if (error) throw error;
-    return (data ?? []) as Curso[];
-  },
-
-  async listMaterias(): Promise<Materia[]> {
-    const { data, error } = await supabase.from('materias').select('*').order('nombre');
-    if (error) throw error;
-    return (data ?? []) as Materia[];
-  },
-
-  async listEstudiantes(): Promise<EstudianteListItem[]> {
-    const { data, error } = await supabase
-      .from('estudiantes')
-      .select('id,nombre,email,curso_id,created_at,cursos(id,nombre,nivel)')
-      .order('created_at', { ascending: false });
-
+    const { data, error } = await supabase.from('courses').select('*').order('name');
     if (error) throw error;
     return (data ?? []).map((item: any) => ({
       id: item.id,
-      nombre: item.nombre,
-      email: item.email,
-      curso_id: item.curso_id,
+      nombre: item.name,
+      nivel: item.academic_year ?? item.section ?? '',
       created_at: item.created_at,
-      cursos: Array.isArray(item.cursos) ? item.cursos[0] : item.cursos,
-    })) as EstudianteListItem[];
+    })) as Curso[];
+  },
+
+  async listMaterias(): Promise<Materia[]> {
+    const { data, error } = await supabase.from('subjects').select('*').order('name');
+    if (error) throw error;
+    return (data ?? []).map((item: any) => ({
+      id: item.id,
+      nombre: item.name,
+      created_at: item.created_at,
+    })) as Materia[];
+  },
+
+  async listEstudiantes(): Promise<EstudianteListItem[]> {
+    const [{ data: students, error: studentsError }, { data: courses, error: coursesError }] = await Promise.all([
+      supabase.from('estudiantes').select('id,nombre,email,curso_id,created_at').order('created_at', { ascending: false }),
+      supabase.from('courses').select('id,name,academic_year,section'),
+    ]);
+
+    if (studentsError) throw studentsError;
+    if (coursesError) throw coursesError;
+
+    const courseById = new Map((courses ?? []).map((course: any) => [course.id, course]));
+
+    return (students ?? []).map((item: any) => {
+      const course = courseById.get(item.curso_id);
+      return {
+        id: item.id,
+        nombre: item.nombre,
+        email: item.email,
+        curso_id: item.curso_id,
+        created_at: item.created_at,
+        cursos: course
+          ? {
+              id: course.id,
+              nombre: course.name,
+              nivel: course.academic_year ?? course.section ?? '',
+            }
+          : undefined,
+      };
+    }) as EstudianteListItem[];
   },
 
   async createEstudiante(payload: EstudiantePayload): Promise<Estudiante> {
@@ -204,23 +291,56 @@ export const schoolService = {
   },
 
   async listProfesores(): Promise<ProfesorListItem[]> {
-    const { data, error } = await supabase
-      .from('profesores')
-      .select('id,nombre,email,created_at,profesor_materia_curso(id,materias(id,nombre),cursos(id,nombre,nivel))')
-      .order('created_at', { ascending: false });
+    const [
+      { data: teachers, error: teachersError },
+      { data: assignments, error: assignmentsError },
+      { data: subjects, error: subjectsError },
+      { data: courses, error: coursesError },
+    ] = await Promise.all([
+      supabase.from('profesores').select('id,nombre,email,created_at').order('created_at', { ascending: false }),
+      supabase.from('profesor_materia_curso').select('*'),
+      supabase.from('subjects').select('id,name'),
+      supabase.from('courses').select('id,name,academic_year,section'),
+    ]);
 
-    if (error) throw error;
-    return (data ?? []).map((item: any) => ({
-      id: item.id,
-      nombre: item.nombre,
-      email: item.email,
-      created_at: item.created_at,
-      profesor_materia_curso: (item.profesor_materia_curso ?? []).map((assign: any) => ({
-        id: assign.id,
-        materias: Array.isArray(assign.materias) ? assign.materias[0] : assign.materias,
-        cursos: Array.isArray(assign.cursos) ? assign.cursos[0] : assign.cursos,
-      })),
-    })) as ProfesorListItem[];
+    if (teachersError) throw teachersError;
+    if (assignmentsError) throw assignmentsError;
+    if (subjectsError) throw subjectsError;
+    if (coursesError) throw coursesError;
+
+    const subjectById = new Map((subjects ?? []).map((item: any) => [item.id, item]));
+    const courseById = new Map((courses ?? []).map((item: any) => [item.id, item]));
+
+    return (teachers ?? []).map((teacher: any) => {
+      const teacherAssignments = (assignments ?? []).filter((assignment: any) => assignment.profesor_id === teacher.id);
+      return {
+        id: teacher.id,
+        nombre: teacher.nombre,
+        email: teacher.email,
+        created_at: teacher.created_at,
+        profesor_materia_curso: teacherAssignments.map((assignment: any) => {
+          const mapped = mapAssignmentColumns(assignment);
+          const subject = mapped.materiaId ? subjectById.get(mapped.materiaId) : null;
+          const course = mapped.cursoId ? courseById.get(mapped.cursoId) : null;
+          return {
+            id: assignment.id,
+            materias: subject
+              ? {
+                  id: subject.id,
+                  nombre: subject.name,
+                }
+              : undefined,
+            cursos: course
+              ? {
+                  id: course.id,
+                  nombre: course.name,
+                  nivel: course.academic_year ?? course.section ?? '',
+                }
+              : undefined,
+          };
+        }),
+      };
+    }) as ProfesorListItem[];
   },
 
   async createProfesor(payload: ProfesorPayload): Promise<Profesor> {
@@ -234,17 +354,19 @@ export const schoolService = {
       .select('*')
       .single();
 
-    if (profesorError || !profesor) throw profesorError ?? new Error('No se pudo crear el profesor.');
+    if (profesorError || !profesor) throw new Error(profesorError?.message || 'No se pudo crear el profesor.');
 
-    const { error: assignmentError } = await supabase.from('profesor_materia_curso').insert({
-      profesor_id: profesor.id,
-      materia_id: payload.materia_id,
-      curso_id: payload.curso_id,
-    });
-
-    if (assignmentError) {
+    try {
+      await insertTeacherAssignment({
+        profesorId: profesor.id,
+        materiaId: payload.materia_id,
+        cursoId: payload.curso_id,
+      });
+    } catch (assignmentError) {
       await supabase.from('profesores').delete().eq('id', profesor.id);
-      throw assignmentError;
+      throw assignmentError instanceof Error
+        ? assignmentError
+        : new Error('No se pudo crear la asignacion del profesor.');
     }
 
     return profesor as Profesor;
@@ -260,7 +382,7 @@ export const schoolService = {
       .update({ nombre: payload.nombre, email: payload.email })
       .eq('id', id);
 
-    if (profesorError) throw profesorError;
+    if (profesorError) throw new Error(profesorError.message || 'No se pudo actualizar el profesor.');
 
     const { data: currentAssignment, error: assignmentFetchError } = await supabase
       .from('profesor_materia_curso')
@@ -268,25 +390,22 @@ export const schoolService = {
       .eq('profesor_id', id)
       .maybeSingle();
 
-    if (assignmentFetchError) throw assignmentFetchError;
+    if (assignmentFetchError) throw new Error(assignmentFetchError.message || 'No se pudo leer la asignacion.');
 
     if (currentAssignment?.id) {
-      const { error: assignmentUpdateError } = await supabase
-        .from('profesor_materia_curso')
-        .update({ materia_id: payload.materia_id, curso_id: payload.curso_id })
-        .eq('id', currentAssignment.id);
-
-      if (assignmentUpdateError) throw assignmentUpdateError;
+      await updateTeacherAssignment({
+        assignmentId: currentAssignment.id,
+        materiaId: payload.materia_id,
+        cursoId: payload.curso_id,
+      });
       return;
     }
 
-    const { error: assignmentCreateError } = await supabase.from('profesor_materia_curso').insert({
-      profesor_id: id,
-      materia_id: payload.materia_id,
-      curso_id: payload.curso_id,
+    await insertTeacherAssignment({
+      profesorId: id,
+      materiaId: payload.materia_id,
+      cursoId: payload.curso_id,
     });
-
-    if (assignmentCreateError) throw assignmentCreateError;
   },
 
   async deleteProfesor(id: string): Promise<void> {
@@ -301,7 +420,14 @@ export const schoolService = {
       .eq('profesor_id', profesorId)
       .maybeSingle();
 
-    if (error) throw error;
-    return (data as ProfesorMateriaCurso | null) ?? null;
+    if (error) throw new Error(error.message || 'No se pudo leer la asignacion del profesor.');
+    if (!data) return null;
+    const mapped = mapAssignmentColumns(data);
+    return {
+      id: data.id,
+      profesor_id: data.profesor_id,
+      materia_id: mapped.materiaId ?? '',
+      curso_id: mapped.cursoId ?? '',
+    } as ProfesorMateriaCurso;
   },
 };
