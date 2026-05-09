@@ -101,6 +101,7 @@ async function upsertTeacherAssignment(
     .from("profesor_materia_curso")
     .select("id")
     .eq("profesor_id", userId)
+    .limit(1)
     .maybeSingle();
   if (currentError) throw new Error(currentError.message || "No se pudo consultar asignacion docente.");
 
@@ -130,6 +131,11 @@ async function upsertTeacherAssignment(
     curso_id: courseId,
   } as any);
   if (second.error) throw new Error(second.error.message || first.error.message || "No se pudo crear asignacion docente.");
+}
+
+async function deleteTeacherAssignments(admin: ReturnType<typeof createClient>, userId: string) {
+  const { error } = await admin.from("profesor_materia_curso").delete().eq("profesor_id", userId);
+  if (error) throw new Error(error.message || "No se pudieron eliminar las asignaciones docentes.");
 }
 
 Deno.serve(async (req) => {
@@ -219,7 +225,9 @@ Deno.serve(async (req) => {
       if (payload.role) {
         await setUserRole(admin, payload.userId, payload.role);
       }
-      if (payload.role === "teacher" || payload.subjectId !== undefined || payload.courseId !== undefined) {
+      if (payload.role && payload.role !== "teacher") {
+        await deleteTeacherAssignments(admin, payload.userId);
+      } else if (payload.role === "teacher" || payload.subjectId !== undefined || payload.courseId !== undefined) {
         await upsertTeacherAssignment(admin, payload.userId, payload.subjectId ?? null, payload.courseId ?? null);
       }
 

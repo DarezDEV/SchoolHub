@@ -63,7 +63,7 @@ export default function CoordinatorDashboard() {
   const [pendingDelete, setPendingDelete] = useState<{ type: 'course' | 'subject' | 'student' | 'teacher' | 'user'; id: string; label: string } | null>(null);
 
   const [courseForm, setCourseForm] = useState({ name: '', code: '', academic_year: '', section: '', description: '' });
-  const [subjectForm, setSubjectForm] = useState({ name: '', description: '' });
+  const [subjectForm, setSubjectForm] = useState({ name: '', code: '', description: '' });
   const [studentForm, setStudentForm] = useState({ nombre: '', email: '', curso_id: '' });
   const [teacherForm, setTeacherForm] = useState({ nombre: '', email: '', materia_id: '', curso_id: '' });
   const [userForm, setUserForm] = useState<{ name: string; email: string; role: RoleName; active: boolean }>({
@@ -201,10 +201,10 @@ export default function CoordinatorDashboard() {
   function openSubjectModal(item?: Subject) {
     if (item) {
       setEditingSubject(item);
-      setSubjectForm({ name: item.name, description: item.description ?? '' });
+      setSubjectForm({ name: item.name, code: item.code ?? '', description: item.description ?? '' });
     } else {
       setEditingSubject(null);
-      setSubjectForm({ name: '', description: '' });
+      setSubjectForm({ name: '', code: '', description: '' });
     }
     setSubjectModal(true);
   }
@@ -264,8 +264,9 @@ export default function CoordinatorDashboard() {
   async function saveSubject(e: React.FormEvent) {
     e.preventDefault();
     try {
-      if (editingSubject) await subjectService.update(editingSubject.id, subjectForm);
-      else await subjectService.create(subjectForm);
+      const payload = { ...subjectForm, code: subjectForm.code.trim().toUpperCase() };
+      if (editingSubject) await subjectService.update(editingSubject.id, payload);
+      else await subjectService.create(payload);
       setSubjectModal(false);
       setSuccess(editingSubject ? 'Materia actualizada.' : 'Materia creada.');
       await loadAll();
@@ -332,6 +333,9 @@ export default function CoordinatorDashboard() {
       await loadAll();
     } catch (err) {
       setError(formatError(err, 'No se pudo guardar el usuario.'));
+    }
+  }
+
   function openCourseAssignmentModal() {
     setCourseAssignmentForm({ materia_id: '', profesor_id: '' });
     setCourseAssignmentModal(true);
@@ -797,6 +801,7 @@ export default function CoordinatorDashboard() {
       <Modal open={subjectModal} title={editingSubject ? 'Editar materia' : 'Crear materia'} onClose={() => setSubjectModal(false)}>
         <form className="space-y-3" onSubmit={saveSubject}>
           <Input label="Nombre" value={subjectForm.name} onChange={(e) => setSubjectForm((c) => ({ ...c, name: e.target.value }))} required />
+          <Input label="Codigo" value={subjectForm.code} onChange={(e) => setSubjectForm((c) => ({ ...c, code: e.target.value.toUpperCase() }))} required />
           <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setSubjectModal(false)}>Cancelar</Button><Button type="submit">Guardar</Button></div>
         </form>
       </Modal>
@@ -847,9 +852,12 @@ export default function CoordinatorDashboard() {
               Usuario activo
             </label>
           )}
-          <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setUserModal(false)}>Cancelar</Button>
-            <Button type="submit">{editingUser ? 'Guardar' : 'Invitar'}</Button>
+	          <div className="flex justify-end gap-2">
+	            <Button type="button" variant="secondary" onClick={() => setUserModal(false)}>Cancelar</Button>
+	            <Button type="submit">{editingUser ? 'Guardar' : 'Invitar'}</Button>
+            </div>
+          </form>
+        </Modal>
       <Modal open={courseAssignmentModal} title="Asignar materia al curso" onClose={() => setCourseAssignmentModal(false)}>
         <form className="space-y-4" onSubmit={saveCourseAssignment}>
           {selectedCourse && (

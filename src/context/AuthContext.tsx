@@ -24,9 +24,10 @@ async function fetchUserData(supabaseUser: User): Promise<AuthUser> {
   ]);
 
   if (profileRes.error) throw profileRes.error;
-  if (roleRes.error) throw roleRes.error;
   const profile = profileRes.data as Profile | null;
-  const roleRaw = Array.isArray((roleRes.data as any)?.roles)
+  const roleRaw = roleRes.error
+    ? null
+    : Array.isArray((roleRes.data as any)?.roles)
     ? (roleRes.data as any)?.roles?.[0]?.name
     : (roleRes.data as any)?.roles?.name;
   const role = (roleRaw ?? profile?.role ?? null) as RoleName | null;

@@ -49,6 +49,7 @@ export interface Course {
 export interface Subject {
   id: string;
   name: string;
+  code: string;
   description?: string;
   active: boolean;
   created_at: string;

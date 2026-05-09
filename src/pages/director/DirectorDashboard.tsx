@@ -50,7 +50,7 @@ export default function DirectorDashboard() {
         {section !== 'dashboard' && (
           <EmptyState
             title="Vista de consulta"
-            description="Como director, este modulo esta disponible en modo analitico. Puedes usar estas secciones para seguimiento y supervisión sin edición directa."
+            description="Como director, este modulo esta disponible en modo analitico. Puedes usar estas secciones para seguimiento y supervisiÃ³n sin ediciÃ³n directa."
           />
         )}
       </div>
