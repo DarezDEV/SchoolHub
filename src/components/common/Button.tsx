@@ -12,12 +12,13 @@ export const Button: React.FC<ButtonProps> = ({
   className = "",
   ...props
 }) => {
-  const baseStyles = "font-semibold rounded transition-colors disabled:opacity-50";
+  const baseStyles =
+    "font-semibold rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-primary/40";
 
   const variantStyles = {
-    primary: "bg-primary text-white hover:bg-primary-dark",
-    secondary: "bg-secondary text-white hover:bg-blue-400",
-    danger: "bg-error text-white hover:bg-red-500",
+    primary: "bg-primary text-white hover:bg-primary-dark shadow-sm hover:shadow",
+    secondary: "bg-white text-text-primary border border-slate-300 hover:bg-slate-50",
+    danger: "bg-error text-white hover:bg-red-500 shadow-sm hover:shadow",
   };
 
   const sizeStyles = {

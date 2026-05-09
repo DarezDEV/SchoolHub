@@ -1,86 +1,156 @@
 import { useAuth } from '../hooks/useAuth';
-import { useNavigate } from 'react-router-dom';
-import { ROLE_LABELS, ROLE_COLORS } from '../utils/constants';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { ROLE_LABELS } from '../utils/constants';
 import type { RoleName } from '../types';
-
-const ROLE_ICONS: Record<RoleName, string> = {
-  director: '👑',
-  coordinator: '🧑‍💼',
-  teacher: '👨‍🏫',
-  student: '👨‍🎓',
-};
+import { BarChart3, BookOpen, GraduationCap, LayoutDashboard, Menu, Settings, Shield, Users, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { cn } from '../lib/cn';
 
 interface MainLayoutProps {
   children: React.ReactNode;
 }
 
+interface MenuItem {
+  key: string;
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  href: string;
+}
+
+const menuItems: MenuItem[] = [
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, href: 'dashboard' },
+  { key: 'estudiantes', label: 'Estudiantes', icon: GraduationCap, href: 'estudiantes' },
+  { key: 'profesores', label: 'Profesores', icon: Users, href: 'profesores' },
+  { key: 'cursos', label: 'Cursos', icon: BookOpen, href: 'cursos' },
+  { key: 'materias', label: 'Materias', icon: Shield, href: 'materias' },
+  { key: 'usuarios', label: 'Usuarios', icon: Users, href: 'usuarios' },
+  { key: 'reportes', label: 'Reportes', icon: BarChart3, href: 'reportes' },
+  { key: 'configuracion', label: 'Configuracion', icon: Settings, href: 'configuracion' },
+];
+
+function roleBasePath(role: RoleName | null | undefined) {
+  if (role === 'director') return '/director/dashboard';
+  if (role === 'coordinator') return '/coordinador/dashboard';
+  if (role === 'teacher') return '/profesor/dashboard';
+  return '/estudiante/dashboard';
+}
+
 export default function MainLayout({ children }: MainLayoutProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const role = user?.role as RoleName;
+  const roleLabel = role ? ROLE_LABELS[role] : '';
+  const showSidebar = role === 'coordinator' || role === 'director';
+
+  const activeSection = useMemo(() => {
+    const search = new URLSearchParams(location.search);
+    return search.get('section') ?? 'dashboard';
+  }, [location.search]);
+
+  const basePath = roleBasePath(role);
 
   const handleSignOut = async () => {
     await signOut();
     navigate('/login', { replace: true });
   };
 
-  const role = user?.role as RoleName;
-  const colorClass = role ? ROLE_COLORS[role] : 'bg-primary';
-  const roleLabel = role ? ROLE_LABELS[role] : '';
-  const roleIcon = role ? ROLE_ICONS[role] : '';
+  const navigateToSection = (section: string) => {
+    navigate(`${basePath}?section=${section}`);
+    setSidebarOpen(false);
+  };
 
   return (
-    <div className="min-h-screen bg-surface flex flex-col">
-      <header className="bg-white border-b border-slate-100 shadow-sm sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-primary-dark rounded-lg flex items-center justify-center">
-              <svg viewBox="0 0 40 40" fill="none" className="w-5 h-5">
-                <path d="M20 4L35 12V28L20 36L5 28V12L20 4Z" fill="#2563EB" stroke="#1E40AF" strokeWidth="2"/>
-                <circle cx="20" cy="16" r="4" fill="white"/>
-                <path d="M12 27 Q20 22 28 27" stroke="#38BDF8" strokeWidth="2.5" strokeLinecap="round" fill="none"/>
-              </svg>
-            </div>
-            <span className="text-lg font-bold text-text-primary">
-              School<span className="text-primary">Hub</span>
-            </span>
-          </div>
+    <div className="min-h-screen bg-slate-100 text-text-primary">
+      <div className="flex">
+        {showSidebar && (
+          <>
+            <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-white lg:block">
+              <div className="flex h-16 items-center border-b border-slate-200 px-6">
+                <p className="text-lg font-semibold tracking-tight">SchoolHub</p>
+              </div>
+              <nav className="space-y-1 p-4">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeSection === item.href;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => navigateToSection(item.href)}
+                      className={cn(
+                        'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors',
+                        isActive ? 'bg-blue-50 text-primary' : 'text-text-secondary hover:bg-slate-100 hover:text-text-primary',
+                      )}
+                    >
+                      <Icon size={17} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </aside>
 
-          <div className="flex items-center gap-3">
-            <span className={`hidden sm:flex items-center gap-1.5 ${colorClass} text-white text-xs font-semibold px-3 py-1.5 rounded-full`}>
-              <span>{roleIcon}</span>
-              <span>{roleLabel}</span>
-            </span>
-
-            {user?.profile && (
-              <div className="hidden sm:flex flex-col text-right">
-                <span className="text-sm font-semibold text-text-primary leading-tight">
-                  {user.profile.name} {user.profile.last_name}
-                </span>
-                <span className="text-xs text-text-secondary">{user.email}</span>
+            {sidebarOpen && (
+              <div className="fixed inset-0 z-40 bg-slate-950/45 lg:hidden" onClick={() => setSidebarOpen(false)}>
+                <aside className="h-full w-72 border-r border-slate-200 bg-white p-4" onClick={(e) => e.stopPropagation()}>
+                  <div className="mb-4 flex items-center justify-between">
+                    <p className="text-lg font-semibold">SchoolHub</p>
+                    <button type="button" onClick={() => setSidebarOpen(false)} className="rounded-lg p-1 hover:bg-slate-100">
+                      <X size={18} />
+                    </button>
+                  </div>
+                  <nav className="space-y-1">
+                    {menuItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = activeSection === item.href;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => navigateToSection(item.href)}
+                          className={cn(
+                            'flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors',
+                            isActive ? 'bg-blue-50 text-primary' : 'text-text-secondary hover:bg-slate-100 hover:text-text-primary',
+                          )}
+                        >
+                          <Icon size={17} />
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </nav>
+                </aside>
               </div>
             )}
+          </>
+        )}
 
-            <div className={`w-9 h-9 rounded-full ${colorClass} flex items-center justify-center text-white font-bold text-sm flex-shrink-0`}>
-              {user?.profile?.name?.[0]?.toUpperCase() ?? '?'}
+        <div className="min-h-screen flex-1">
+          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
+            <div className="flex h-16 items-center justify-between px-4 sm:px-6">
+              <div className="flex items-center gap-3">
+                {showSidebar && (
+                  <button type="button" onClick={() => setSidebarOpen(true)} className="rounded-lg p-2 hover:bg-slate-100 lg:hidden">
+                    <Menu size={18} />
+                  </button>
+                )}
+                <div>
+                  <p className="text-sm text-text-secondary">{roleLabel}</p>
+                  <p className="text-sm font-semibold text-text-primary">{user?.profile?.name} {user?.profile?.last_name}</p>
+                </div>
+              </div>
+              <button onClick={handleSignOut} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-text-secondary hover:bg-slate-100 hover:text-text-primary">
+                Cerrar sesion
+              </button>
             </div>
+          </header>
 
-            <button
-              onClick={handleSignOut}
-              className="flex items-center gap-1.5 text-text-secondary hover:text-error transition-colors px-2 py-2 rounded-lg hover:bg-red-50"
-              title="Cerrar sesión"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
-              </svg>
-              <span className="hidden sm:inline text-sm font-medium">Salir</span>
-            </button>
-          </div>
+          <main className="px-4 py-6 sm:px-6">{children}</main>
         </div>
-      </header>
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-8">
-        {children}
-      </main>
+      </div>
     </div>
   );
 }
