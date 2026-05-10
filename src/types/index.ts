@@ -100,6 +100,8 @@ export interface Estudiante {
   email: string;
   curso_id: string;
   created_at: string;
+  matricula?: string;
+  foto_url?: string;
 }
 
 export interface EstudianteListItem extends Estudiante {
@@ -118,6 +120,40 @@ export interface ProfesorMateriaCurso {
   profesor_id: string;
   materia_id: string;
   curso_id: string;
+}
+
+export interface TeacherAssignmentView {
+  id: string;
+  profesor_id: string;
+  materia_id: string;
+  curso_id: string;
+  materia: Pick<Materia, 'id' | 'nombre'>;
+  curso: Pick<Curso, 'id' | 'nombre' | 'nivel'>;
+  student_count: number;
+}
+
+export interface TeacherStudentView extends Estudiante {
+  curso: Pick<Curso, 'id' | 'nombre' | 'nivel'>;
+  materia: Pick<Materia, 'id' | 'nombre'>;
+}
+
+export interface Nota {
+  id: string;
+  estudiante_id: string;
+  profesor_id: string;
+  course_id: string;
+  subject_id: string;
+  periodo: string;
+  nota: number;
+  observacion?: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface TeacherGradeView extends Nota {
+  estudiante: Pick<Estudiante, 'id' | 'nombre' | 'email' | 'matricula' | 'foto_url'>;
+  curso: Pick<Curso, 'id' | 'nombre' | 'nivel'>;
+  materia: Pick<Materia, 'id' | 'nombre'>;
 }
 
 export interface ProfesorListItem extends Profesor {

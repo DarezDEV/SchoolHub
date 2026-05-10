@@ -2,7 +2,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ROLE_LABELS } from '../utils/constants';
 import type { RoleName } from '../types';
-import { BarChart3, BookOpen, GraduationCap, LayoutDashboard, Menu, Settings, Shield, Users, X } from 'lucide-react';
+import { BarChart3, BookOpen, ClipboardEdit, GraduationCap, LayoutDashboard, LogOut, Menu, Settings, Shield, User, Users, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { cn } from '../lib/cn';
 
@@ -17,7 +17,7 @@ interface MenuItem {
   href: string;
 }
 
-const menuItems: MenuItem[] = [
+const adminMenuItems: MenuItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, href: 'dashboard' },
   { key: 'estudiantes', label: 'Estudiantes', icon: GraduationCap, href: 'estudiantes' },
   { key: 'profesores', label: 'Profesores', icon: Users, href: 'profesores' },
@@ -26,6 +26,15 @@ const menuItems: MenuItem[] = [
   { key: 'usuarios', label: 'Usuarios', icon: Users, href: 'usuarios' },
   { key: 'reportes', label: 'Reportes', icon: BarChart3, href: 'reportes' },
   { key: 'configuracion', label: 'Configuracion', icon: Settings, href: 'configuracion' },
+];
+
+const teacherMenuItems: MenuItem[] = [
+  { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, href: 'dashboard' },
+  { key: 'mis-cursos', label: 'Mis Cursos', icon: BookOpen, href: 'mis-cursos' },
+  { key: 'estudiantes', label: 'Estudiantes', icon: GraduationCap, href: 'estudiantes' },
+  { key: 'publicar-notas', label: 'Publicar Notas', icon: ClipboardEdit, href: 'publicar-notas' },
+  { key: 'gestionar-notas', label: 'Gestionar Notas', icon: BarChart3, href: 'gestionar-notas' },
+  { key: 'perfil', label: 'Perfil', icon: User, href: 'perfil' },
 ];
 
 function roleBasePath(role: RoleName | null | undefined) {
@@ -43,7 +52,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
 
   const role = user?.role as RoleName;
   const roleLabel = role ? ROLE_LABELS[role] : '';
-  const showSidebar = role === 'coordinator' || role === 'director';
+  const showSidebar = role === 'coordinator' || role === 'director' || role === 'teacher';
+  const menuItems = role === 'teacher' ? teacherMenuItems : adminMenuItems;
 
   const activeSection = useMemo(() => {
     const search = new URLSearchParams(location.search);
@@ -67,7 +77,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
       <div className="flex">
         {showSidebar && (
           <>
-            <aside className="hidden w-72 shrink-0 border-r border-slate-200 bg-white lg:block">
+            <aside className="hidden min-h-screen w-72 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
               <div className="flex h-16 items-center border-b border-slate-200 px-6">
                 <p className="text-lg font-semibold tracking-tight">SchoolHub</p>
               </div>
@@ -91,6 +101,16 @@ export default function MainLayout({ children }: MainLayoutProps) {
                   );
                 })}
               </nav>
+              <div className="mt-auto border-t border-slate-200 p-4">
+                <button
+                  type="button"
+                  onClick={() => void handleSignOut()}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition-colors hover:bg-slate-100 hover:text-text-primary"
+                >
+                  <LogOut size={17} />
+                  <span>Cerrar sesion</span>
+                </button>
+              </div>
             </aside>
 
             {sidebarOpen && (
@@ -122,6 +142,16 @@ export default function MainLayout({ children }: MainLayoutProps) {
                       );
                     })}
                   </nav>
+                  <div className="mt-4 border-t border-slate-200 pt-4">
+                    <button
+                      type="button"
+                      onClick={() => void handleSignOut()}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-text-secondary transition-colors hover:bg-slate-100 hover:text-text-primary"
+                    >
+                      <LogOut size={17} />
+                      <span>Cerrar sesion</span>
+                    </button>
+                  </div>
                 </aside>
               </div>
             )}
