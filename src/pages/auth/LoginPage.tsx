@@ -66,11 +66,7 @@ export default function LoginPage() {
           <h1 className="mt-5 max-w-md text-4xl font-semibold leading-tight">Gestion escolar moderna para equipos academicos.</h1>
           <p className="mt-4 max-w-md text-sm text-blue-100/90">Centraliza cursos, materias, profesores y estudiantes con un flujo administrativo profesional.</p>
         </div>
-<<<<<<< HEAD
         <p className="text-xs text-blue-100/80">Plataforma administrativa · Seguridad Supabase · Dashboard responsive</p>
-=======
-        <p className="text-xs text-blue-100/80">Plataforma administrativa - Seguridad Supabase - Dashboard responsive</p>
->>>>>>> 5c1034d (rol del profesor con todos sus apartados)
       </section>
 
       <section className="flex items-center justify-center p-6">
