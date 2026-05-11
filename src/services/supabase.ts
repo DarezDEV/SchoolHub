@@ -634,3 +634,78 @@ export const teacherService = {
     if (error) throw new Error(error.message || 'No se pudo actualizar la nota.');
   },
 };
+
+export const studentService = {
+  async getEnrolledCourses(studentId: string): Promise<Course[]> {
+    const { data, error } = await supabase
+      .from('student_course_enrollments')
+      .select('courses(*)')
+      .eq('student_id', studentId);
+
+    if (error) throw error;
+    return (data ?? []).map((item: any) => item.courses) as Course[];
+  },
+
+  async getGrades(studentId: string): Promise<GradeRecord[]> {
+    const { data, error } = await supabase
+      .from('grade_records')
+      .select('*')
+      .eq('student_id', studentId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return (data ?? []) as GradeRecord[];
+  },
+
+  async enrollInCourse(studentId: string, courseId: string): Promise<void> {
+    const { error } = await supabase
+      .from('student_course_enrollments')
+      .insert({ student_id: studentId, course_id: courseId });
+
+    if (error) throw error;
+  },
+};
+
+export const teacherService = {
+  async getAssignedCourses(teacherId: string): Promise<{ course: Course; subject: Subject }[]> {
+    const { data, error } = await supabase
+      .from('profesor_materia_curso')
+      .select('courses(*), subjects(*)')
+      .eq('profesor_id', teacherId);
+
+    if (error) throw error;
+    return (data ?? []).map((item: any) => ({
+      course: item.courses as Course,
+      subject: item.subjects as Subject,
+    }));
+  },
+
+  async getStudentsInCourse(courseId: string): Promise<{ student: Profile; enrollment: StudentCourseEnrollment }[]> {
+    const { data, error } = await supabase
+      .from('student_course_enrollments')
+      .select('profiles(*), *')
+      .eq('course_id', courseId);
+
+    if (error) throw error;
+    return (data ?? []).map((item: any) => ({
+      student: item.profiles as Profile,
+      enrollment: {
+        id: item.id,
+        student_id: item.student_id,
+        course_id: item.course_id,
+        enrolled_at: item.enrolled_at,
+      } as StudentCourseEnrollment,
+    }));
+  },
+
+  async addGrade(grade: Omit<GradeRecord, 'id' | 'created_at'>): Promise<GradeRecord> {
+    const { data, error } = await supabase
+      .from('grade_records')
+      .insert(grade)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as GradeRecord;
+  },
+};
