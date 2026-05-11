@@ -1,9 +1,41 @@
+import { useEffect, useState } from 'react';
 import MainLayout from '../../layouts/MainLayout';
 import { useAuth } from '../../hooks/useAuth';
+import { teacherService } from '../../services/supabase';
+import type { Course, Subject } from '../../types';
 import { CAPABILITY_LABELS, ROLE_CAPABILITIES, ROLE_DESCRIPTIONS } from '../../utils/constants';
 
 export default function TeacherDashboard() {
   const { user } = useAuth();
+  const [assignments, setAssignments] = useState<{ course: Course; subject: Subject }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const fetchData = async () => {
+      try {
+        const teacherAssignments = await teacherService.getAssignedCourses(user.id);
+        setAssignments(teacherAssignments);
+      } catch (error) {
+        console.error('Error fetching teacher data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [user?.id]);
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-lg">Cargando...</div>
+        </div>
+      </MainLayout>
+    );
+  }
 
   return (
     <MainLayout>
@@ -25,6 +57,21 @@ export default function TeacherDashboard() {
                 {ROLE_DESCRIPTIONS.teacher}
               </p>
             </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-text-primary">Mis Asignaciones</h2>
+          <div className="mt-4 grid gap-3">
+            {assignments.length > 0 ? (
+              assignments.map((assignment, index) => (
+                <div key={index} className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-emerald-900">
+                  {assignment.subject.name} en {assignment.course.name} ({assignment.course.code})
+                </div>
+              ))
+            ) : (
+              <div className="text-gray-500">No tienes asignaciones.</div>
+            )}
           </div>
         </div>
 
