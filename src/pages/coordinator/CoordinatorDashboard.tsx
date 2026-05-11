@@ -30,6 +30,9 @@ export default function CoordinatorDashboard() {
   const [users, setUsers] = useState<UserListItem[]>([]);
 
   const [loading, setLoading] = useState(true);
+  const [savingStudent, setSavingStudent] = useState(false);
+  const [savingTeacher, setSavingTeacher] = useState(false);
+  const [savingUser, setSavingUser] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -277,6 +280,8 @@ export default function CoordinatorDashboard() {
 
   async function saveStudent(e: React.FormEvent) {
     e.preventDefault();
+    if (savingStudent) return;
+    setSavingStudent(true);
     try {
       if (!studentForm.curso_id) throw new Error('Debe seleccionar un curso.');
       if (editingStudent) await schoolService.updateEstudiante(editingStudent.id, studentForm);
@@ -286,11 +291,15 @@ export default function CoordinatorDashboard() {
       await loadAll();
     } catch (err) {
       setError(formatError(err, 'No se pudo guardar el estudiante.'));
+    } finally {
+      setSavingStudent(false);
     }
   }
 
   async function saveTeacher(e: React.FormEvent) {
     e.preventDefault();
+    if (savingTeacher) return;
+    setSavingTeacher(true);
     try {
       if (!teacherForm.materia_id || !teacherForm.curso_id) throw new Error('Seleccione materia y curso.');
       if (editingTeacher) await schoolService.updateProfesor(editingTeacher.id, teacherForm);
@@ -300,11 +309,15 @@ export default function CoordinatorDashboard() {
       await loadAll();
     } catch (err) {
       setError(formatError(err, 'No se pudo guardar el profesor.'));
+    } finally {
+      setSavingTeacher(false);
     }
   }
 
   async function saveUser(e: React.FormEvent) {
     e.preventDefault();
+    if (savingUser) return;
+    setSavingUser(true);
     try {
       if (!userForm.name.trim()) throw new Error('El nombre es obligatorio.');
       if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(userForm.email.trim().toLowerCase())) {
@@ -333,6 +346,8 @@ export default function CoordinatorDashboard() {
       await loadAll();
     } catch (err) {
       setError(formatError(err, 'No se pudo guardar el usuario.'));
+    } finally {
+      setSavingUser(false);
     }
   }
 
@@ -811,7 +826,7 @@ export default function CoordinatorDashboard() {
           <Input label="Nombre" value={studentForm.nombre} onChange={(e) => setStudentForm((c) => ({ ...c, nombre: e.target.value }))} required />
           <Input label="Email" type="email" value={studentForm.email} onChange={(e) => setStudentForm((c) => ({ ...c, email: e.target.value }))} required />
           <div><label className="mb-2 block text-sm font-medium">Curso</label><select className="w-full rounded-xl border border-gray-300 px-3 py-2" value={studentForm.curso_id} onChange={(e) => setStudentForm((c) => ({ ...c, curso_id: e.target.value }))} required><option value="">Selecciona un curso</option>{cursos.map((curso) => <option key={curso.id} value={curso.id}>{curso.nombre} - {curso.nivel}</option>)}</select></div>
-          <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setStudentModal(false)}>Cancelar</Button><Button type="submit">Guardar</Button></div>
+          <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setStudentModal(false)} disabled={savingStudent}>Cancelar</Button><Button type="submit" isLoading={savingStudent} disabled={savingStudent}>Guardar</Button></div>
         </form>
       </Modal>
 
@@ -821,7 +836,7 @@ export default function CoordinatorDashboard() {
           <Input label="Email" type="email" value={teacherForm.email} onChange={(e) => setTeacherForm((c) => ({ ...c, email: e.target.value }))} required />
           <div><label className="mb-2 block text-sm font-medium">Materia</label><select className="w-full rounded-xl border border-gray-300 px-3 py-2" value={teacherForm.materia_id} onChange={(e) => setTeacherForm((c) => ({ ...c, materia_id: e.target.value }))} required><option value="">Selecciona una materia</option>{materias.map((materia) => <option key={materia.id} value={materia.id}>{materia.nombre}</option>)}</select></div>
           <div><label className="mb-2 block text-sm font-medium">Curso</label><select className="w-full rounded-xl border border-gray-300 px-3 py-2" value={teacherForm.curso_id} onChange={(e) => setTeacherForm((c) => ({ ...c, curso_id: e.target.value }))} required><option value="">Selecciona un curso</option>{cursos.map((curso) => <option key={curso.id} value={curso.id}>{curso.nombre} - {curso.nivel}</option>)}</select></div>
-          <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setTeacherModal(false)}>Cancelar</Button><Button type="submit">Guardar</Button></div>
+          <div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setTeacherModal(false)} disabled={savingTeacher}>Cancelar</Button><Button type="submit" isLoading={savingTeacher} disabled={savingTeacher}>Guardar</Button></div>
         </form>
       </Modal>
 
@@ -853,8 +868,8 @@ export default function CoordinatorDashboard() {
             </label>
           )}
 	          <div className="flex justify-end gap-2">
-	            <Button type="button" variant="secondary" onClick={() => setUserModal(false)}>Cancelar</Button>
-	            <Button type="submit">{editingUser ? 'Guardar' : 'Invitar'}</Button>
+	            <Button type="button" variant="secondary" onClick={() => setUserModal(false)} disabled={savingUser}>Cancelar</Button>
+	            <Button type="submit" isLoading={savingUser} disabled={savingUser}>{editingUser ? 'Guardar' : 'Invitar'}</Button>
             </div>
           </form>
         </Modal>

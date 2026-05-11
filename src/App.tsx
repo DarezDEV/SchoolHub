@@ -7,6 +7,7 @@ import { ROLE_ROUTES } from './utils/constants';
 import type { RoleName } from './types';
 
 import LoginPage from './pages/auth/LoginPage';
+import SetPasswordPage from './pages/auth/SetPasswordPage';
 import DirectorDashboard from './pages/director/DirectorDashboard';
 import CoordinatorDashboard from './pages/coordinator/CoordinatorDashboard';
 import TeacherDashboard from './pages/teacher/TeacherDashboard';
@@ -60,6 +61,7 @@ function AppRoutes() {
           </PublicOnlyRoute>
         )}
       />
+      <Route path="/auth/set-password" element={<SetPasswordPage />} />
 
       <Route
         path="/director/dashboard"

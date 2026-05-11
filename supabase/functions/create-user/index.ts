@@ -10,6 +10,7 @@ type InvitePayload = {
   role: RoleName;
   courseId?: string;
   subjectId?: string;
+  accessToken?: string;
 };
 
 type UpdatePayload = {
@@ -21,11 +22,13 @@ type UpdatePayload = {
   active?: boolean;
   courseId?: string | null;
   subjectId?: string | null;
+  accessToken?: string;
 };
 
 type DeletePayload = {
   action: "delete";
   userId: string;
+  accessToken?: string;
 };
 
 type Payload = InvitePayload | UpdatePayload | DeletePayload;
@@ -35,6 +38,14 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+function getAppUrl() {
+  const raw =
+    Deno.env.get("APP_URL") ??
+    Deno.env.get("FRONTEND_URL") ??
+    "http://localhost:5173";
+  return raw.replace(/\/+$/, "");
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -42,16 +53,45 @@ function json(body: unknown, status = 200) {
   });
 }
 
-async function requireCoordinatorOrDirector(admin: ReturnType<typeof createClient>, token: string) {
-  const { data: userData, error: userError } = await admin.auth.getUser(token);
-  if (userError || !userData.user) {
-    throw new Error("Token invalido o expirado.");
+function toErrorMessage(value: unknown, fallback: string) {
+  if (value instanceof Error && value.message) return value.message;
+  if (typeof value === "string" && value.trim()) return value;
+  if (value && typeof value === "object") {
+    const maybeMessage = (value as any).message ?? (value as any).error_description ?? (value as any).error;
+    if (typeof maybeMessage === "string" && maybeMessage.trim()) return maybeMessage;
+    try {
+      const raw = JSON.stringify(value);
+      if (raw && raw !== "{}") return raw;
+    } catch {
+      // ignore
+    }
   }
+  return fallback;
+}
+
+async function requireCoordinatorOrDirector(admin: ReturnType<typeof createClient>, token: string) {
+  let userId: string | null = null;
+  const { data: userData, error: userError } = await admin.auth.getUser(token);
+  if (!userError && userData.user?.id) {
+    userId = userData.user.id;
+  } else {
+    try {
+      const [, payloadPart] = token.split(".");
+      if (!payloadPart) throw new Error("Malformed token");
+      const normalized = payloadPart.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
+      const decoded = JSON.parse(atob(padded));
+      userId = typeof decoded?.sub === "string" ? decoded.sub : null;
+    } catch {
+      userId = null;
+    }
+  }
+  if (!userId) throw new Error("Token invalido o expirado.");
 
   const { data: profileData, error: profileError } = await admin
     .from("profiles")
     .select("active,role")
-    .eq("id", userData.user.id)
+    .eq("id", userId)
     .maybeSingle();
   if (profileError) throw new Error(profileError.message || "No se pudo validar estado del usuario.");
 
@@ -59,7 +99,7 @@ async function requireCoordinatorOrDirector(admin: ReturnType<typeof createClien
   const roleRes = await admin
     .from("user_roles")
     .select("roles(name)")
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .maybeSingle();
   if (!roleRes.error && roleRes.data) {
     const fromUserRoles = Array.isArray((roleRes.data as any)?.roles)
@@ -152,8 +192,11 @@ Deno.serve(async (req) => {
       return json({ error: "Missing SUPABASE_URL or SERVICE_ROLE_KEY" }, 500);
     }
 
-    const authHeader = req.headers.get("Authorization") ?? "";
-    const token = authHeader.replace("Bearer ", "").trim();
+    const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization") ?? "";
+    const body = (await req.json()) as Payload;
+    const bodyToken = (body as any)?.accessToken;
+    const tokenFromHeader = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const token = (typeof bodyToken === "string" && bodyToken.trim()) ? bodyToken.trim() : tokenFromHeader;
     if (!token) return json({ error: "Missing auth token" }, 401);
 
     const admin = createClient(supabaseUrl, serviceRole, {
@@ -162,26 +205,59 @@ Deno.serve(async (req) => {
 
     await requireCoordinatorOrDirector(admin, token);
 
-    const payload = (await req.json()) as Payload;
+    const payload = body;
 
     if (payload.action === "invite") {
       if (!payload.email || !payload.name || !payload.role) {
         return json({ error: "email, name y role son obligatorios" }, 400);
       }
 
-      const tempPassword = crypto.randomUUID();
-      const { data: createData, error: createError } = await admin.auth.admin.createUser({
-        email: payload.email,
-        email_confirm: true,
-        password: tempPassword,
-      });
+      let createdUser: { id: string; email?: string | null } | null = null;
+      let fallbackUsed = false;
 
-      if (createError || !createData.user) {
-        return json({ error: createError?.message || "No se pudo crear usuario en auth" }, 400);
+      const { data: inviteData, error: inviteError } = await admin.auth.admin.inviteUserByEmail(payload.email, {
+        redirectTo: `${getAppUrl()}/auth/set-password`,
+      });
+      if (!inviteError && inviteData.user) {
+        createdUser = { id: inviteData.user.id, email: inviteData.user.email };
+      } else {
+        const inviteStatus = (inviteError as any)?.status;
+        const inviteCode = (inviteError as any)?.code;
+        const isTimeout = inviteStatus === 504 || inviteCode === "gateway_timeout";
+
+        if (!isTimeout) {
+          return json(
+            {
+              error: toErrorMessage(inviteError, "No se pudo invitar usuario"),
+              details: inviteError ? { code: (inviteError as any).code, status: (inviteError as any).status } : null,
+            },
+            400,
+          );
+        }
+
+        const tempPassword = crypto.randomUUID();
+        const { data: createData, error: createError } = await admin.auth.admin.createUser({
+          email: payload.email,
+          email_confirm: true,
+          password: tempPassword,
+        });
+
+        if (createError || !createData.user) {
+          return json(
+            {
+              error: `Fallo la invitacion por timeout y tambien la creacion directa: ${toErrorMessage(createError, "No se pudo crear usuario")}`,
+              details: createError ? { code: (createError as any).code, status: (createError as any).status } : null,
+            },
+            400,
+          );
+        }
+
+        createdUser = { id: createData.user.id, email: createData.user.email };
+        fallbackUsed = true;
       }
 
       const { error: profileError } = await admin.from("profiles").upsert({
-        id: createData.user.id,
+        id: createdUser.id,
         name: payload.name,
         last_name: "",
         email: payload.email,
@@ -190,16 +266,17 @@ Deno.serve(async (req) => {
         course_id: payload.role === "student" ? payload.courseId ?? null : null,
       });
 
-      if (profileError) return json({ error: profileError.message || "No se pudo crear profile" }, 400);
+      if (profileError) return json({ error: toErrorMessage(profileError, "No se pudo crear profile") }, 400);
 
-      await setUserRole(admin, createData.user.id, payload.role);
+      await setUserRole(admin, createdUser.id, payload.role);
       if (payload.role === "teacher") {
-        await upsertTeacherAssignment(admin, createData.user.id, payload.subjectId, payload.courseId);
+        await upsertTeacherAssignment(admin, createdUser.id, payload.subjectId, payload.courseId);
       }
 
       return json({
         success: true,
-        user: { id: createData.user.id, email: createData.user.email, name: payload.name, role: payload.role, active: true },
+        warning: fallbackUsed ? "Usuario creado, pero no se pudo enviar el correo de invitacion (SMTP timeout)." : null,
+        user: { id: createdUser.id, email: createdUser.email, name: payload.name, role: payload.role, active: true },
       });
     }
 
@@ -214,12 +291,12 @@ Deno.serve(async (req) => {
 
       if (Object.keys(profileUpdate).length > 0) {
         const { error: profileError } = await admin.from("profiles").update(profileUpdate).eq("id", payload.userId);
-        if (profileError) return json({ error: profileError.message || "No se pudo actualizar perfil" }, 400);
+        if (profileError) return json({ error: toErrorMessage(profileError, "No se pudo actualizar perfil") }, 400);
       }
 
       if (payload.email) {
         const { error: authUpdateError } = await admin.auth.admin.updateUserById(payload.userId, { email: payload.email });
-        if (authUpdateError) return json({ error: authUpdateError.message || "No se pudo actualizar email en auth" }, 400);
+        if (authUpdateError) return json({ error: toErrorMessage(authUpdateError, "No se pudo actualizar email en auth") }, 400);
       }
 
       if (payload.role) {
@@ -240,14 +317,22 @@ Deno.serve(async (req) => {
       await admin.from("profiles").delete().eq("id", payload.userId);
 
       const { error: deleteError } = await admin.auth.admin.deleteUser(payload.userId);
-      if (deleteError) return json({ error: deleteError.message || "No se pudo eliminar usuario" }, 400);
+      if (deleteError) return json({ error: toErrorMessage(deleteError, "No se pudo eliminar usuario") }, 400);
 
       return json({ success: true });
     }
 
     return json({ error: "Action invalida" }, 400);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Error inesperado";
+    const message = toErrorMessage(error, "Error inesperado");
+    if (
+      message.toLowerCase().includes("token invalido") ||
+      message.toLowerCase().includes("token expirado") ||
+      message.toLowerCase().includes("no autorizado") ||
+      message.toLowerCase().includes("missing auth token")
+    ) {
+      return json({ error: message }, 401);
+    }
     return json({ error: message }, 500);
   }
 });

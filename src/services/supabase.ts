@@ -22,15 +22,41 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-function parseFunctionError(error: unknown): Error {
+async function parseFunctionError(error: unknown): Promise<Error> {
   const messageFromError = error instanceof Error ? error.message : '';
   const context = (error as any)?.context;
-  const contextError = context?.error || context?.message;
-  const finalMessage =
-    contextError ||
-    messageFromError ||
-    'Error en la funcion remota.';
-  return new Error(finalMessage);
+
+  if (context && typeof context === 'object') {
+    if (typeof context.error === 'string') return new Error(context.error);
+    if (typeof context.message === 'string') return new Error(context.message);
+
+    if (typeof (context as any).json === 'function') {
+      try {
+        const body = await (context as any).json();
+        if (typeof body?.error === 'string') return new Error(body.error);
+        if (typeof body?.message === 'string') return new Error(body.message);
+      } catch {
+        // Ignore and fallback
+      }
+    }
+
+    if (typeof (context as any).text === 'function') {
+      try {
+        const text = await (context as any).text();
+        if (text) return new Error(text);
+      } catch {
+        // Ignore and fallback
+      }
+    }
+
+    const status = (context as any).status;
+    const statusText = (context as any).statusText;
+    if (typeof status === 'number') {
+      return new Error(`Edge Function error (${status}${statusText ? ` ${statusText}` : ''}).`);
+    }
+  }
+
+  return new Error(messageFromError || 'Error en la funcion remota.');
 }
 
 export interface CoursePayload {
@@ -237,6 +263,14 @@ export const subjectService = {
 };
 
 export const schoolService = {
+  async getAuthHeaders() {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw new Error(error.message || 'No se pudo obtener la sesion.');
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Sesion expirada. Vuelve a iniciar sesion.');
+    return { Authorization: `Bearer ${token}` };
+  },
+
   async listUsers(): Promise<UserListItem[]> {
     const [profilesRes, rolesRes] = await Promise.all([
       supabase.from('profiles').select('id,name,email,role,course_id,active,created_at').order('created_at', { ascending: false }),
@@ -261,41 +295,59 @@ export const schoolService = {
   },
 
   async inviteUser(payload: { name: string; email: string; role: RoleName; courseId?: string; subjectId?: string }) {
+    const normalizedEmail = payload.email.trim().toLowerCase();
+    const { data: existingProfile, error: existingProfileError } = await supabase
+      .from('profiles')
+      .select('id,email')
+      .eq('email', normalizedEmail)
+      .maybeSingle();
+
+    if (existingProfileError) throw new Error(existingProfileError.message || 'No se pudo validar el email.');
+    if (existingProfile?.id) {
+      throw new Error('Ya existe un usuario con ese correo. Usa editar usuario o cambia el email.');
+    }
+
     try {
+      const headers = await schoolService.getAuthHeaders();
       const { data, error } = await supabase.functions.invoke('create-user', {
-        body: { action: 'invite', ...payload },
+        headers,
+        body: { action: 'invite', ...payload, email: normalizedEmail, accessToken: headers.Authorization.replace('Bearer ', '') },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       return data;
     } catch (error) {
-      throw parseFunctionError(error);
+      throw await parseFunctionError(error);
     }
   },
 
   async updateUser(payload: { userId: string; name?: string; email?: string; role?: RoleName; active?: boolean; courseId?: string | null; subjectId?: string | null }) {
     try {
+      const headers = await schoolService.getAuthHeaders();
       const { data, error } = await supabase.functions.invoke('create-user', {
-        body: { action: 'update', ...payload },
+        headers,
+        body: { action: 'update', ...payload, accessToken: headers.Authorization.replace('Bearer ', '') },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       return data;
     } catch (error) {
-      throw parseFunctionError(error);
+      throw await parseFunctionError(error);
     }
   },
 
   async deleteUser(userId: string) {
     try {
+      const headers = await schoolService.getAuthHeaders();
       const { data, error } = await supabase.functions.invoke('create-user', {
-        body: { action: 'delete', userId },
+        headers,
+        body: { action: 'delete', userId, accessToken: headers.Authorization.replace('Bearer ', '') },
       });
       if (error) throw error;
       if ((data as any)?.error) throw new Error((data as any).error);
       return data;
     } catch (error) {
-      throw parseFunctionError(error);
+      throw await parseFunctionError(error);
     }
   },
 
